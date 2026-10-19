@@ -9,6 +9,7 @@
 // the order they were pitched, then draws up to intellect.
 import { ZONES, type HeroSide, type Zone } from "../game.ts";
 import { shuffle, type EngineCard } from "../index.ts";
+import type { Effect } from "./effects.ts";
 
 /** A card as the rules engine needs it: the counting engine's card, plus cost and go again. */
 export interface RulesCard extends EngineCard {
@@ -16,6 +17,11 @@ export interface RulesCard extends EngineCard {
   cost: number | null;
   /** Natural go again (the keyword); conditional go again comes from effects. */
   goAgain: boolean;
+  /**
+   * What playing it does, verified by a player. Missing = not modelled yet: the engine can
+   * pitch, hold, arsenal or banish it, but not play it (docs/rules-engine.md).
+   */
+  effects?: Effect[];
 }
 
 export interface RulesInstance {
@@ -33,6 +39,8 @@ export type RulesEvent =
   | { type: "attackPlayed"; uid: string }
   | { type: "tokensCreated"; token: string; amount: number }
   | { type: "tokensRemoved"; token: string; amount: number }
+  | { type: "resourcesGained"; amount: number }
+  | { type: "actionPointGained" }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
@@ -65,16 +73,19 @@ const emptyZones = () =>
     RulesInstance[]
   >;
 
-const withEvents = (s: RulesState, ...events: RulesEvent[]): RulesState => ({
+export const withEvents = (
+  s: RulesState,
+  ...events: RulesEvent[]
+): RulesState => ({
   ...s,
   events: [...s.events, ...events],
 });
 
-function zoneOf(s: RulesState, uid: string): Zone | undefined {
+export function zoneOf(s: RulesState, uid: string): Zone | undefined {
   return ZONES.find((z) => s.zones[z].some((i) => i.uid === uid));
 }
 
-function instance(s: RulesState, uid: string): RulesInstance {
+export function instance(s: RulesState, uid: string): RulesInstance {
   const zone = zoneOf(s, uid);
   if (!zone) throw new RulesError(`No card ${uid} in the game.`);
   return s.zones[zone].find((i) => i.uid === uid)!;
@@ -192,45 +203,6 @@ export function pitchCard(s: RulesState, uid: string): RulesState {
   return withEvents(
     { ...moved, resources: moved.resources + card.pitch },
     { type: "pitched", uid, amount: card.pitch },
-  );
-}
-
-const NEEDS_ACTION_POINT = new Set(["action", "attack_action"]);
-const PLAYABLE_IN_ACTION_PHASE = new Set([
-  "action",
-  "attack_action",
-  "instant",
-]);
-
-/** Play a card from hand or arsenal: pay its cost and, for an action, an action point. */
-export function playCard(s: RulesState, uid: string): RulesState {
-  const { card } = instance(s, uid);
-  const from = zoneOf(s, uid);
-  if (from !== "hand" && from !== "arsenal")
-    throw new RulesError(`${card.name} isn't in hand or arsenal.`);
-  if (s.phase !== "action")
-    throw new RulesError(`Cards are played in the action phase.`);
-  if (!PLAYABLE_IN_ACTION_PHASE.has(card.type ?? ""))
-    throw new RulesError(`${card.name} can't be played in the action phase.`);
-  const action = NEEDS_ACTION_POINT.has(card.type ?? "");
-  if (action && s.actionPoints < 1)
-    throw new RulesError("No action point left.");
-  const cost = card.cost ?? 0;
-  if (cost > s.resources)
-    throw new RulesError(
-      `${card.name} costs ${cost}; ${s.resources} available.`,
-    );
-  const attack = card.type === "attack_action";
-  const paid: RulesState = {
-    ...s,
-    resources: s.resources - cost,
-    actionPoints: s.actionPoints - (action ? 1 : 0) + (card.goAgain ? 1 : 0),
-  };
-  const moved = moveCard(paid, uid, attack ? "arena" : "graveyard");
-  return withEvents(
-    moved,
-    { type: "played", uid, cost },
-    ...(attack ? [{ type: "attackPlayed" as const, uid }] : []),
   );
 }
 

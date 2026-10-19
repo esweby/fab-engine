@@ -29,6 +29,8 @@ const card = (name: string, over: Partial<RulesCard> = {}): RulesCard => ({
   roles: [],
   traits: [],
   amounts: {},
+  // A card with no effects, verified as such: the engine may play it.
+  effects: [],
   ...over,
 });
 const deckOf = (...cards: [RulesCard, number][]) =>
