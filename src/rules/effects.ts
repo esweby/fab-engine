@@ -18,6 +18,12 @@ export type Check =
   /** A card bound earlier has this trait (class, talent or fact, e.g. "shadow"). */
   | { has: string; target: string }
   | { createdThisTurn: string; atLeast: number }
+  | { activatedThisTurn: string; atLeast: number }
+  /** The bound card is the first card played this turn matching the filter. */
+  | {
+      firstPlayedThisTurn: { type?: string; trait?: string };
+      target: string;
+    }
   | { tokens: string; atLeast: number }
   | { side: HeroSide }
   | { all: Check[] }
@@ -37,6 +43,12 @@ export type Effect =
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
   | { op: "gainActionPoint" }
+  /** Viserai: turn the hero card to its other side. */
+  | { op: "traverse" }
+  /** Destroy every token of a kind, dealing arcane damage for each (the Runechant rule). */
+  | { op: "destroyAllTokens"; token: string; arcaneEach: number }
+  /** Lose 1 life for each face-up card with the trait in the banished zone (Blood Debt). */
+  | { op: "loseLifePerBanished"; trait: string }
   | { op: "if"; check: Check; then: Effect[]; else?: Effect[] };
 
 const name = z.string().min(1).max(40);
@@ -49,6 +61,17 @@ export const checkSchema: z.ZodType<Check> = z.lazy(() =>
       atLeast: z.number().int().min(0),
     }),
     z.strictObject({ tokens: name, atLeast: z.number().int().min(0) }),
+    z.strictObject({
+      activatedThisTurn: name,
+      atLeast: z.number().int().min(0),
+    }),
+    z.strictObject({
+      firstPlayedThisTurn: z.strictObject({
+        type: name.optional(),
+        trait: name.optional(),
+      }),
+      target: name,
+    }),
     z.strictObject({ side: z.enum(["forsaken", "usurper"]) }),
     z.strictObject({ all: z.array(checkSchema).min(1) }),
     z.strictObject({ any: z.array(checkSchema).min(1) }),
@@ -69,6 +92,13 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("removeToken"), token: name, amount }),
     z.strictObject({ op: z.literal("gainResources"), amount }),
     z.strictObject({ op: z.literal("gainActionPoint") }),
+    z.strictObject({ op: z.literal("traverse") }),
+    z.strictObject({
+      op: z.literal("destroyAllTokens"),
+      token: name,
+      arcaneEach: z.number().int().min(0).max(10),
+    }),
+    z.strictObject({ op: z.literal("loseLifePerBanished"), trait: name }),
     z.strictObject({
       op: z.literal("if"),
       check: checkSchema,
@@ -171,6 +201,24 @@ export function holds(
   if ("createdThisTurn" in check)
     return (s.createdThisTurn[check.createdThisTurn] ?? 0) >= check.atLeast;
   if ("tokens" in check) return (s.tokens[check.tokens] ?? 0) >= check.atLeast;
+  if ("activatedThisTurn" in check)
+    return (s.activatedThisTurn[check.activatedThisTurn] ?? 0) >= check.atLeast;
+  if ("firstPlayedThisTurn" in check) {
+    const target = (bindings.get(check.target) ?? [])[0];
+    const f = check.firstPlayedThisTurn;
+    const fits = (uid: string) => {
+      const c = instance(s, uid).card;
+      return (
+        (f.type === undefined || c.type === f.type) &&
+        (f.trait === undefined || c.traits.includes(f.trait))
+      );
+    };
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    const first = s.events
+      .slice(turnStart + 1)
+      .find((e) => e.type === "played" && fits(e.uid));
+    return !!target && !!first && "uid" in first && first.uid === target;
+  }
   if ("side" in check) return s.side === check.side;
   if ("all" in check) return check.all.every((c) => holds(s, c, bindings));
   if ("any" in check) return check.any.some((c) => holds(s, c, bindings));
@@ -235,6 +283,34 @@ export function runEffects(
           { type: "actionPointGained" },
         );
         break;
+      case "traverse": {
+        const to = s.side === "forsaken" ? "usurper" : "forsaken";
+        s = withEvents({ ...s, side: to }, { type: "traversed", to });
+        break;
+      }
+      case "destroyAllTokens": {
+        const n = s.tokens[e.token] ?? 0;
+        if (n > 0) {
+          s = removeTokens(s, e.token, n);
+          if (e.arcaneEach > 0)
+            s = withEvents(s, {
+              type: "arcaneDamage",
+              amount: n * e.arcaneEach,
+            });
+        }
+        break;
+      }
+      case "loseLifePerBanished": {
+        const n = s.zones.banished.filter(
+          (i) => !s.faceDown.includes(i.uid) && i.card.traits.includes(e.trait),
+        ).length;
+        if (n > 0)
+          s = withEvents(
+            { ...s, lifeLost: s.lifeLost + n },
+            { type: "lifeLost", amount: n },
+          );
+        break;
+      }
       case "if":
         s = runEffects(
           s,

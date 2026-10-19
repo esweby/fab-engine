@@ -23,6 +23,10 @@ export interface RulesCard extends EngineCard {
    * pitch, hold, arsenal or banish it, but not play it (docs/rules-engine.md).
    */
   effects?: Effect[];
+  /** Usurp: as an additional cost, destroy a Runechant if able (+2 power if you do). */
+  usurp?: boolean;
+  /** The card's own triggers, live while it's in the arena; "self" binds the card. */
+  triggers?: Trigger[];
 }
 
 export interface RulesInstance {
@@ -43,6 +47,12 @@ export type RulesEvent =
   | { type: "resourcesGained"; amount: number }
   | { type: "actionPointGained" }
   | { type: "triggered"; trigger: string }
+  | { type: "traversed"; to: HeroSide }
+  | { type: "usurped"; uid: string }
+  | { type: "attacking"; uid: string }
+  | { type: "arcaneDamage"; amount: number }
+  | { type: "lifeLost"; amount: number }
+  | { type: "endPhaseStarted"; turn: number }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
@@ -58,6 +68,10 @@ export interface RulesState {
   tokens: Record<string, number>;
   /** Tokens created this turn, reset at the end of the turn. */
   createdThisTurn: Record<string, number>;
+  /** Tokens activated this turn (Gates), reset at the end of the turn. */
+  activatedThisTurn: Record<string, number>;
+  /** Life lost so far (blood debt); damage to an opponent is out of scope. */
+  lifeLost: number;
   resources: number;
   actionPoints: number;
   /** Everything that happened, in order. */
@@ -174,6 +188,8 @@ export function setUp(setup: RulesSetup): RulesState {
     faceDown: [],
     tokens: {},
     createdThisTurn: {},
+    activatedThisTurn: {},
+    lifeLost: 0,
     resources: 0,
     actionPoints: 0,
     events: [],
@@ -265,16 +281,24 @@ export function removeTokens(
   );
 }
 
+/** The start of the end phase, where its triggers (blood debt, the Usurper) happen. */
+export function startEndPhase(s: RulesState): RulesState {
+  return withEvents(
+    { ...s, phase: "end" },
+    { type: "endPhaseStarted", turn: s.turn },
+  );
+}
+
 /**
- * The end phase: optionally a card from hand into an empty arsenal, pitched cards to the
- * bottom of the deck, the turn's counters reset, a draw up to intellect, and the next turn's
- * action phase. Without triggers: the engine's endTurn (play.ts) resolves them.
+ * The rest of the end phase: optionally a card from hand into an empty arsenal, pitched cards
+ * to the bottom of the deck, the turn's counters reset, a draw up to intellect, and the next
+ * turn's action phase. Without triggers: the engine's endTurn (play.ts) resolves them.
  */
-export function endTurnOnly(
+export function finishEndPhase(
   s: RulesState,
   options: { arsenal?: string } = {},
 ): RulesState {
-  let next: RulesState = { ...s, phase: "end" };
+  let next = s;
   if (options.arsenal !== undefined) {
     if (next.zones.arsenal.length > 0)
       throw new RulesError("The arsenal is full.");
@@ -285,7 +309,13 @@ export function endTurnOnly(
   for (const pitched of [...next.zones.pitch])
     next = moveCard(next, pitched.uid, "deck", { position: "bottom" });
   next = withEvents(
-    { ...next, resources: 0, actionPoints: 0, createdThisTurn: {} },
+    {
+      ...next,
+      resources: 0,
+      actionPoints: 0,
+      createdThisTurn: {},
+      activatedThisTurn: {},
+    },
     { type: "turnEnded", turn: s.turn },
   );
   next = draw(next, next.intellect - next.zones.hand.length);

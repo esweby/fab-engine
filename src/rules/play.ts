@@ -4,9 +4,11 @@
 import { noChoices, runEffects, type Choose } from "./effects.ts";
 import { resolveTriggers } from "./triggers.ts";
 import {
-  endTurnOnly,
+  finishEndPhase,
   instance,
   pitchOnly,
+  removeTokens,
+  startEndPhase,
   moveCard,
   RulesError,
   withEvents,
@@ -48,19 +50,33 @@ export function playCard(
       `${card.name} costs ${cost}; ${s.resources} available.`,
     );
   const attack = card.type === "attack_action";
-  const paid: RulesState = {
+  let paid: RulesState = {
     ...s,
     resources: s.resources - cost,
     actionPoints: s.actionPoints - (action ? 1 : 0) + (card.goAgain ? 1 : 0),
   };
+  // Usurp: an additional cost, paid if able.
+  if (card.usurp && (paid.tokens.runechant ?? 0) > 0)
+    paid = withEvents(removeTokens(paid, "runechant", 1), {
+      type: "usurped",
+      uid,
+    });
   const played = withEvents(
     moveCard(paid, uid, attack ? "arena" : "graveyard"),
     { type: "played", uid, cost },
     ...(attack ? [{ type: "attackPlayed" as const, uid }] : []),
   );
-  return resolveTriggers(
+  const resolved = resolveTriggers(
     runEffects(played, card.effects, choose),
     s.events.length,
+    choose,
+  );
+  if (!attack) return resolved;
+  // The attack resolves and becomes attacking ("when this attacks"); combat itself is out of
+  // scope.
+  return resolveTriggers(
+    withEvents(resolved, { type: "attacking", uid }),
+    resolved.events.length,
     choose,
   );
 }
@@ -74,11 +90,19 @@ export function pitchCard(
   return resolveTriggers(pitchOnly(s, uid), s.events.length, choose);
 }
 
-/** End the turn (see endTurnOnly), then resolve what it sets off. */
+/**
+ * End the turn: the start of the end phase and its triggers, then the rest of the end phase
+ * (see finishEndPhase) and anything that sets off.
+ */
 export function endTurn(
   s: RulesState,
   options: { arsenal?: string } = {},
   choose: Choose = noChoices,
 ): RulesState {
-  return resolveTriggers(endTurnOnly(s, options), s.events.length, choose);
+  const started = resolveTriggers(startEndPhase(s), s.events.length, choose);
+  return resolveTriggers(
+    finishEndPhase(started, options),
+    started.events.length,
+    choose,
+  );
 }

@@ -31,3 +31,10 @@ export {
   type EventMatcher,
   type Trigger,
 } from "./triggers.ts";
+export {
+  BLOOD_DEBT,
+  CARD_RULES,
+  cardWithRules,
+  RUNECHANT,
+  VISERAI,
+} from "./viserai.ts";

@@ -33,6 +33,8 @@ export interface EventMatcher {
   /** For moves. */
   from?: Zone;
   to?: Zone;
+  /** On a card's own trigger: only events about that card ("when this attacks"). */
+  self?: boolean;
 }
 
 export interface Trigger {
@@ -59,6 +61,12 @@ const EVENT_TYPES = [
   "triggered",
   "turnEnded",
   "turnStarted",
+  "traversed",
+  "usurped",
+  "attacking",
+  "arcaneDamage",
+  "lifeLost",
+  "endPhaseStarted",
 ] as const satisfies readonly RulesEvent["type"][];
 
 const zone = z.enum(ZONES);
@@ -69,6 +77,7 @@ const triggerSchema = z.strictObject({
     token: z.string().min(1).optional(),
     from: zone.optional(),
     to: zone.optional(),
+    self: z.boolean().optional(),
   }),
   condition: checkSchema.optional(),
   optional: z.boolean().optional(),
@@ -85,12 +94,17 @@ export function parseTriggers(data: unknown): Trigger[] {
     );
   }
   for (const t of parsed.data)
-    validateBindings(t.condition, t.effects, new Set(["event"]));
+    validateBindings(t.condition, t.effects, new Set(["event", "self"]));
   return parsed.data;
 }
 
-function matches(on: EventMatcher, e: RulesEvent): boolean {
+function matches(
+  on: EventMatcher,
+  e: RulesEvent,
+  self: string | undefined,
+): boolean {
   if (on.event !== e.type) return false;
+  if (on.self && (!("uid" in e) || e.uid !== self)) return false;
   if (on.token !== undefined && (!("token" in e) || e.token !== on.token))
     return false;
   if (on.from !== undefined && (!("from" in e) || e.from !== on.from))
@@ -99,8 +113,21 @@ function matches(on: EventMatcher, e: RulesEvent): boolean {
   return true;
 }
 
-const eventBindings = (e: RulesEvent) =>
-  new Map([["event", "uid" in e ? [e.uid] : []]]);
+const bindingsFor = (e: RulesEvent, self: string | undefined) =>
+  new Map([
+    ["event", "uid" in e ? [e.uid] : []],
+    ["self", self ? [self] : []],
+  ]);
+
+/** The triggers in play: the game's own (hero, tokens, rules) and those of cards in the arena. */
+function triggersInPlay(s: RulesState) {
+  return [
+    ...s.triggers.map((trigger) => ({ trigger, self: undefined })),
+    ...s.zones.arena.flatMap((i) =>
+      (i.card.triggers ?? []).map((trigger) => ({ trigger, self: i.uid })),
+    ),
+  ];
+}
 
 /**
  * Resolves every trigger set off by events from `since` onwards, and by their own events, until
@@ -111,21 +138,24 @@ export function resolveTriggers(
   since: number,
   choose: Choose,
 ): RulesState {
-  if (state.triggers.length === 0) return state;
   let s = state;
   let cursor = since;
   let resolved = 0;
-  const pending: { trigger: Trigger; event: RulesEvent }[] = [];
+  const pending: {
+    trigger: Trigger;
+    event: RulesEvent;
+    self: string | undefined;
+  }[] = [];
   for (;;) {
     for (; cursor < s.events.length; cursor++) {
       const event = s.events[cursor]!;
-      for (const trigger of s.triggers)
+      for (const { trigger, self } of triggersInPlay(s))
         if (
-          matches(trigger.on, event) &&
+          matches(trigger.on, event, self) &&
           (!trigger.condition ||
-            holds(s, trigger.condition, eventBindings(event)))
+            holds(s, trigger.condition, bindingsFor(event, self)))
         )
-          pending.push({ trigger, event });
+          pending.push({ trigger, event, self });
     }
     const next = pending.shift();
     if (!next) return s;
@@ -134,7 +164,7 @@ export function resolveTriggers(
         `More than ${s.budget} triggers resolved in one action; the run stops here.`,
         s.events,
       );
-    const { trigger, event } = next;
+    const { trigger, event, self } = next;
     if (trigger.optional) {
       const request: ChoiceRequest = {
         kind: "confirm",
@@ -152,7 +182,7 @@ export function resolveTriggers(
       withEvents(s, { type: "triggered", trigger: trigger.id }),
       trigger.effects,
       choose,
-      eventBindings(event),
+      bindingsFor(event, self),
     );
   }
 }
