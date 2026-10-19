@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   act,
   newGame,
+  redo,
   replay,
   undo,
   type EngineCard,
@@ -161,5 +162,54 @@ describe("undo and replay", () => {
         h.present.log,
       ).present,
     ).toEqual(h.present);
+  });
+});
+
+// Goldfishing (README "Goldfishing", phase two step 5).
+describe("goldfishing helpers", () => {
+  it("pitching a card moves it to the pitch zone and adds its pitch to resources", () => {
+    let h = setup();
+    const c = h.present.zones.hand[0]!;
+    h = act(h, { type: "pitch", uid: c.uid });
+    expect(h.present.zones.pitch.map((x) => x.uid)).toEqual([c.uid]);
+    expect(h.present.resources).toBe(c.card.pitch);
+  });
+
+  it("logs a pitch once, so a replay pitches it once", () => {
+    let h = setup();
+    h = act(h, { type: "pitch", uid: h.present.zones.hand[0]!.uid });
+    expect(h.present.log.map((x) => x.type)).toEqual(["pitch"]);
+  });
+
+  it("spends and adds resources by hand, never below zero", () => {
+    let h = act(setup(), { type: "resources", delta: 3 });
+    h = act(h, { type: "resources", delta: -5 });
+    expect(h.present.resources).toBe(0);
+  });
+
+  it("counts tokens created this turn, which the traverse conditions depend on", () => {
+    let h = act(setup(), { type: "token", token: "runechant", delta: 2 });
+    h = act(h, { type: "token", token: "runechant", delta: 1 });
+    h = act(h, { type: "token", token: "runechant", delta: -2 });
+    expect(h.present.createdThisTurn).toEqual({ runechant: 3 });
+    expect(h.present.tokens).toEqual({ runechant: 1 });
+  });
+
+  it("ends the turn with resources and this turn's counts reset", () => {
+    let h = act(setup(), { type: "resources", delta: 2 });
+    h = act(h, { type: "token", token: "gate", delta: 1 });
+    h = act(h, { type: "endTurn" });
+    expect(h.present.resources).toBe(0);
+    expect(h.present.createdThisTurn).toEqual({});
+    expect(h.present.tokens).toEqual({ gate: 1 });
+  });
+
+  it("redoes what was undone, until a new action", () => {
+    const start = setup();
+    const drawn = act(start, { type: "draw" });
+    const back = undo(drawn);
+    expect(redo(back).present).toEqual(drawn.present);
+    expect(redo(act(back, { type: "traverse" })).present.side).toBe("usurper");
+    expect(redo(start)).toEqual(start);
   });
 });

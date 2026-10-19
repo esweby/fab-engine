@@ -29,6 +29,9 @@ export type GameAction =
   | { type: "draw"; count?: number }
   | { type: "move"; uid: string; to: Zone; position?: "top" | "bottom" }
   | { type: "token"; token: string; delta: number }
+  /** Move a card to the pitch zone and add its pitch value to resources. */
+  | { type: "pitch"; uid: string }
+  | { type: "resources"; delta: number }
   | { type: "traverse" }
   | { type: "shuffle" }
   | { type: "endTurn" };
@@ -41,6 +44,10 @@ export interface GameState {
   /** The deck's first card is its top. */
   zones: Record<Zone, CardInstance[]>;
   tokens: Record<string, number>;
+  /** Tokens created this turn (README "Goldfishing": what traverse depends on). */
+  createdThisTurn: Record<string, number>;
+  /** Resources available to spend. */
+  resources: number;
   /** Every action so far, so a game can be replayed from its seed. */
   log: GameAction[];
 }
@@ -49,6 +56,8 @@ export interface GameState {
 export interface GameHistory {
   past: GameState[];
   present: GameState;
+  /** Undone states, for redo; cleared by a new action. */
+  future: GameState[];
 }
 
 export interface GameSetup {
@@ -116,6 +125,32 @@ export function apply(state: GameState, action: GameAction): GameState {
               (state.tokens[action.token] ?? 0) + action.delta,
             ),
           },
+          // Adding a token also counts it as created this turn.
+          createdThisTurn:
+            action.delta > 0
+              ? {
+                  ...state.createdThisTurn,
+                  [action.token]:
+                    (state.createdThisTurn[action.token] ?? 0) + action.delta,
+                }
+              : state.createdThisTurn,
+        };
+      case "pitch": {
+        const moved = apply(state, {
+          type: "move",
+          uid: action.uid,
+          to: "pitch",
+        });
+        const card = moved.zones.pitch.find((c) => c.uid === action.uid)!;
+        return {
+          ...moved,
+          resources: state.resources + (card.card.pitch ?? 0),
+        };
+      }
+      case "resources":
+        return {
+          ...state,
+          resources: Math.max(0, state.resources + action.delta),
         };
       case "traverse":
         return {
@@ -136,6 +171,8 @@ export function apply(state: GameState, action: GameAction): GameState {
         const cleared: GameState = {
           ...state,
           turn: state.turn + 1,
+          resources: 0,
+          createdThisTurn: {},
           zones: {
             ...state.zones,
             deck: [...state.zones.deck, ...state.zones.pitch],
@@ -173,11 +210,13 @@ export function newGame(setup: GameSetup): GameHistory {
       intellect,
       zones,
       tokens: {},
+      createdThisTurn: {},
+      resources: 0,
       log: [],
     },
     intellect,
   );
-  return { past: [], present: state };
+  return { past: [], present: state, future: [] };
 }
 
 /** Applies an action, keeping the state before it for undo. */
@@ -185,6 +224,7 @@ export function act(history: GameHistory, action: GameAction): GameHistory {
   return {
     past: [...history.past, history.present],
     present: apply(history.present, action),
+    future: [],
   };
 }
 
@@ -192,7 +232,19 @@ export function act(history: GameHistory, action: GameAction): GameHistory {
 export function undo(history: GameHistory): GameHistory {
   const previous = history.past.at(-1);
   return previous
-    ? { past: history.past.slice(0, -1), present: previous }
+    ? {
+        past: history.past.slice(0, -1),
+        present: previous,
+        future: [history.present, ...history.future],
+      }
+    : history;
+}
+
+/** Forward one undone action; with nothing undone, nothing changes. */
+export function redo(history: GameHistory): GameHistory {
+  const [next, ...rest] = history.future;
+  return next
+    ? { past: [...history.past, history.present], present: next, future: rest }
     : history;
 }
 
