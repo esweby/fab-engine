@@ -463,8 +463,11 @@ describe("failed hands", () => {
     const fixed = [{ name: "B", zone: "hand" as const }];
     const r = runScenario(scenario({ fixed }), deck, { runs: 200, seed: 3 });
     for (const seed of r.failedSeeds) {
-      const game = newGame({ deck: deck.cards as EngineCard[], seed, fixed })
-        .present;
+      const game = newGame({
+        deck: deck.cards as EngineCard[],
+        seed,
+        fixed,
+      }).present;
       expect(game.zones.hand).toHaveLength(4);
       expect(game.zones.hand.map((c) => c.card.name)).not.toContain("A");
       expect(game.zones.deck).toHaveLength(16);
