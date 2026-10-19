@@ -75,6 +75,7 @@ const EVENT_TYPES = [
   "manual",
   "damageNoted",
   "shuffled",
+  "attackNoted",
 ] as const satisfies readonly RulesEvent["type"][];
 
 const zone = z.enum(ZONES);

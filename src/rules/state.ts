@@ -8,7 +8,12 @@
 // other action to the graveyard; the end phase puts pitched cards on the bottom of the deck in
 // the order they were pitched, then draws up to intellect.
 import { ZONES, type HeroSide, type Zone } from "../game.ts";
-import { shuffle, type EngineCard } from "../index.ts";
+import {
+  shuffle,
+  takeFixed,
+  type EngineCard,
+  type FixedCard,
+} from "../index.ts";
 import type { Effect } from "./effects.ts";
 import type { Trigger } from "./triggers.ts";
 
@@ -65,6 +70,8 @@ export type RulesEvent =
   /** Damage dealt, noted by hand in goldfish (combat is out of scope). */
   | { type: "damageNoted"; amount: number }
   | { type: "shuffled" }
+  /** An attack noted by hand, with a weapon the engine can't attack with yet. */
+  | { type: "attackNoted"; uid: string }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
@@ -179,6 +186,8 @@ export interface RulesSetup {
   triggers?: Trigger[];
   /** Most triggers one action may resolve (default 1,000). */
   budget?: number;
+  /** Cards assumed to already be in hand or arsenal, taken out before the shuffle. */
+  fixed?: FixedCard[];
 }
 
 /**
@@ -188,8 +197,16 @@ export interface RulesSetup {
  */
 export function setUp(setup: RulesSetup): RulesState {
   const zones = emptyZones();
-  const deck = setup.deck.map((card, i) => ({ uid: `d${i}`, card }));
-  zones.deck = setup.order === "asGiven" ? deck : shuffle(deck, setup.seed);
+  // Fixed cards come out before the shuffle, as the counting engine's newGame does it.
+  const fixed = takeFixed(
+    setup.deck.map((card, i) => ({ uid: `d${i}`, card })),
+    (i) => i.card,
+    setup.fixed ?? [],
+  );
+  zones.deck =
+    setup.order === "asGiven" ? fixed.rest : shuffle(fixed.rest, setup.seed);
+  zones.hand = fixed.hand;
+  zones.arsenal = fixed.arsenal;
   zones.weapons = (setup.weapons ?? []).map((card, i) => ({
     uid: `w${i}`,
     card,
@@ -220,7 +237,7 @@ export function setUp(setup: RulesSetup): RulesState {
     triggers: setup.triggers ?? [],
     budget: setup.budget ?? 1000,
   };
-  return startTurn(draw(state, intellect));
+  return startTurn(draw(state, intellect - fixed.hand.length));
 }
 
 /** The one way a card changes zone. */

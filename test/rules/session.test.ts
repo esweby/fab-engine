@@ -165,3 +165,36 @@ describe("replay", () => {
     );
   });
 });
+
+// Step 8b: what goldfish needs on top.
+describe("goldfish on the rules engine", () => {
+  it("deals the same game as the counting engine with fixed cards, so failed hands still open", async () => {
+    const { newGame } = await import("../../src/game.ts");
+    const deck = setup.deck;
+    const fixed = [{ name: "Generic A", zone: "hand" as const }];
+    const rules = setUp({ deck, seed: 9, fixed });
+    const counting = newGame({ deck, seed: 9, fixed }).present;
+    expect(rules.zones.hand.map((i) => i.uid)).toEqual(
+      counting.zones.hand.map((i) => i.uid),
+    );
+    expect(rules.zones.deck.map((i) => i.uid)).toEqual(
+      counting.zones.deck.map((i) => i.uid),
+    );
+  });
+
+  it("notes an attack with a weapon that has no verified rules, by hand", () => {
+    const s = setUp({
+      ...setup,
+      weapons: [fact("Blade", { type: "weapon", pitch: null, cost: null })],
+    });
+    const next = applySessionAction(s, { type: "markAttack", uid: "w0" });
+    expect(next.usedThisTurn).toContain("w0");
+    expect(next.events).toContainEqual({ type: "attackNoted", uid: "w0" });
+  });
+
+  it("refuses an action it doesn't know, such as one from an old share link", () => {
+    expect(() =>
+      applySessionAction(start(), { type: "attack", uid: "w0" } as never),
+    ).toThrow(RulesError);
+  });
+});

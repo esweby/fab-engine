@@ -51,6 +51,8 @@ export type SessionAction =
   | { type: "counter"; uid: string; delta: number }
   /** Mark a weapon or piece of equipment used this turn, or unused again. */
   | { type: "use"; uid: string }
+  /** Note an attack with a weapon the engine can't attack with yet: used this turn. */
+  | { type: "markAttack"; uid: string }
   | { type: "life"; delta: number }
   | { type: "damage"; delta: number }
   | { type: "traverse" }
@@ -137,6 +139,19 @@ export function applySessionAction(
         },
         "use",
       );
+    case "markAttack":
+      return manual(
+        withEvents(
+          {
+            ...s,
+            usedThisTurn: s.usedThisTurn.includes(action.uid)
+              ? s.usedThisTurn
+              : [...s.usedThisTurn, action.uid],
+          },
+          { type: "attackNoted", uid: action.uid },
+        ),
+        "attack",
+      );
     case "life":
       return manual({ ...s, lifeLost: s.lifeLost - action.delta }, "life");
     case "damage":
@@ -168,6 +183,10 @@ export function applySessionAction(
       );
       return manual(shuffled, "shuffle");
     }
+    default:
+      throw new RulesError(
+        `Unknown action: ${(action as { type?: string }).type ?? "none"}.`,
+      );
   }
 }
 
