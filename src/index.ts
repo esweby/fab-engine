@@ -103,15 +103,48 @@ const groupSchema: z.ZodType<ConditionGroup> = z.lazy(() =>
   ]),
 );
 
+// Scripted steps (README "Steps (the flow)", scenarios stage 2): deterministic actions run each
+// turn after the draw. A step that chooses a card takes the lowest pitch, then the first in
+// hand; the README's highest-score-first tie-break waits for scores in the engine.
+const stepTurn = z.union([z.literal("each"), z.number().int().min(1).max(10)]);
+const stepSchema = z.discriminatedUnion("do", [
+  z.strictObject({
+    turn: stepTurn,
+    do: z.literal("draw"),
+    count: z.number().int().min(1).max(10),
+  }),
+  z.strictObject({
+    turn: stepTurn,
+    do: z.literal("pitch"),
+    filter: filterSchema,
+  }),
+  z.strictObject({
+    turn: stepTurn,
+    do: z.literal("arsenal"),
+    filter: filterSchema,
+  }),
+  z.strictObject({
+    turn: stepTurn,
+    do: z.literal("banish"),
+    filter: filterSchema,
+  }),
+  z.strictObject({
+    turn: stepTurn,
+    do: z.literal("block"),
+    count: z.number().int().min(1).max(10),
+  }),
+]);
+export type Step = z.infer<typeof stepSchema>;
+
 export const scenarioSchema = z.strictObject({
   version: z.literal(1),
   name: z.string().min(1),
-  /** 0 = the opening hand; N = the hand after turn N's draw. */
+  /** 0 = the opening hand (no steps); N = after turn N's draw and turn N's steps. */
   horizon: z.number().int().min(0).max(10),
   /** fresh: every card is used or pitched and a new hand drawn; drawUp: draw back up. */
   turnModel: z.enum(["fresh", "drawUp"]),
   /** Which zones conditions can see. Weapons and equipment are always visible. */
-  access: z.array(z.enum(["hand", "arsenal", "topOfDeck"])).min(1),
+  access: z.array(z.enum(["hand", "arsenal", "topOfDeck", "banished"])).min(1),
   /** Cards assumed to already be somewhere: each takes one copy out of the deck. */
   fixed: z
     .array(
@@ -125,6 +158,7 @@ export const scenarioSchema = z.strictObject({
       message: "Only one card fits in the arsenal.",
     })
     .optional(),
+  steps: z.array(stepSchema).max(20).optional(),
   condition: groupSchema,
 });
 export type ScenarioDefinition = z.infer<typeof scenarioSchema>;
@@ -247,34 +281,100 @@ export function handsByTurn(
   handSize: number,
   turnModel: "fresh" | "drawUp",
 ): (EngineCard | null)[][] {
-  return tableByTurn(cards, [], turns, handSize, turnModel).map((t) => t.hand);
+  return tableByTurn(
+    cards,
+    { hand: [], arsenal: [] },
+    [],
+    turns,
+    handSize,
+    turnModel,
+  ).map((t) => t.hand);
+}
+
+const ARSENAL_SIZE = 1;
+
+/** Hand indexes in the order a step chooses: lowest pitch, then first in hand. */
+function chooseOrder(hand: (EngineCard | null)[], filter?: Block["filter"]) {
+  return hand
+    .map((card, i) => ({ card, i }))
+    .filter(({ card }) => !filter || matches(card, filter))
+    .sort(
+      (a, b) =>
+        (a.card?.pitch ?? Infinity) - (b.card?.pitch ?? Infinity) || a.i - b.i,
+    )
+    .map(({ i }) => i);
 }
 
 /**
- * What's on the table after each turn's draw: the hand, and the top card of the deck. Fixed
- * hand cards count towards the first hand. Without steps nothing leaves the hand, so drawUp
- * keeps the opening hand; fresh draws a new one each turn. The arsenal isn't touched.
+ * What's on the table after each turn's draw and steps: the hand, arsenal, banished zone and
+ * the top card of the deck. Fixed hand cards count towards the first hand. fresh: whatever is
+ * left in hand is used or pitched and a new hand drawn; drawUp: the hand is drawn back up to
+ * intellect. The arsenal is kept between turns.
  */
 function tableByTurn(
   cards: (EngineCard | null)[],
-  fixedHand: EngineCard[],
+  fixed: { hand: EngineCard[]; arsenal: EngineCard[] },
+  steps: Step[],
   turns: number,
   handSize: number,
   turnModel: "fresh" | "drawUp",
 ) {
-  const out: { hand: (EngineCard | null)[]; top: EngineCard | null }[] = [];
+  const out: {
+    hand: (EngineCard | null)[];
+    arsenal: (EngineCard | null)[];
+    banished: (EngineCard | null)[];
+    top: EngineCard | null;
+  }[] = [];
   let pos = 0;
   let hand: (EngineCard | null)[] = [];
-  for (let t = 0; t < turns; t++) {
-    if (t === 0) {
-      const draw = Math.max(0, handSize - fixedHand.length);
-      hand = [...fixedHand, ...cards.slice(0, draw)];
-      pos = draw;
-    } else if (turnModel === "fresh") {
-      hand = cards.slice(pos, pos + handSize);
-      pos += handSize;
+  const arsenal: (EngineCard | null)[] = [...fixed.arsenal];
+  const banished: (EngineCard | null)[] = [];
+  const draw = (n: number) => {
+    const drawn = cards.slice(pos, pos + Math.max(0, n));
+    pos += drawn.length;
+    return drawn;
+  };
+  for (let t = 1; t <= turns; t++) {
+    if (t === 1) hand = [...fixed.hand, ...draw(handSize - fixed.hand.length)];
+    else if (turnModel === "fresh") hand = draw(handSize);
+    else hand = [...hand, ...draw(handSize - hand.length)];
+
+    for (const step of steps) {
+      if (step.turn !== "each" && step.turn !== t) continue;
+      const take = (i: number) => hand.splice(i, 1)[0]!;
+      switch (step.do) {
+        case "draw":
+          hand.push(...draw(step.count));
+          break;
+        case "pitch": {
+          const i = chooseOrder(hand, step.filter)[0];
+          if (i !== undefined) take(i);
+          break;
+        }
+        case "arsenal": {
+          const i = chooseOrder(hand, step.filter)[0];
+          if (i !== undefined && arsenal.length < ARSENAL_SIZE)
+            arsenal.push(take(i));
+          break;
+        }
+        case "banish": {
+          const i = chooseOrder(hand, step.filter)[0];
+          if (i !== undefined) banished.push(take(i));
+          break;
+        }
+        case "block": {
+          const chosen = new Set(chooseOrder(hand).slice(0, step.count));
+          hand = hand.filter((_, i) => !chosen.has(i));
+          break;
+        }
+      }
     }
-    out.push({ hand, top: cards[pos] ?? null });
+    out.push({
+      hand: [...hand],
+      arsenal: [...arsenal],
+      banished: [...banished],
+      top: cards[pos] ?? null,
+    });
   }
   return out;
 }
@@ -302,15 +402,18 @@ export function runScenario(
     const order = shuffle(fixed.rest, runSeed);
     const table = tableByTurn(
       order,
-      fixed.hand,
+      fixed,
+      // The opening hand is checked before any turn's steps.
+      def.horizon === 0 ? [] : (def.steps ?? []),
       turns,
       handSize,
       def.turnModel,
     );
-    const visible = table.map(({ hand, top }) => [
+    const visible = table.map(({ hand, arsenal, banished, top }) => [
       ...(sees("hand") ? hand : []),
-      ...(sees("arsenal") ? fixed.arsenal : []),
+      ...(sees("arsenal") ? arsenal : []),
       ...(sees("topOfDeck") ? [top] : []),
+      ...(sees("banished") ? banished : []),
       ...gear,
     ]);
     visible.forEach((cards, t) => {

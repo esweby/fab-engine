@@ -474,3 +474,132 @@ describe("failed hands", () => {
     }
   });
 });
+
+// Phase two step 9, scenarios stage 2 (README "Steps (the flow)"): scripted, deterministic
+// steps run each turn after the draw and before the check. A step that chooses a card takes
+// the lowest pitch, then the first in hand (no scores in the engine yet).
+describe("scripted steps", () => {
+  const rate = (
+    over: Partial<ScenarioDefinition>,
+    deck: ReturnType<typeof buildDeck>,
+    runs = 100,
+  ) => runScenario(scenario(over), deck, { runs, seed: 4 }).successRate;
+  const count = (
+    min: number,
+    filter: Record<string, unknown> = { name: "A" },
+  ) => ({
+    all: [{ label: "x", filter, min }],
+  });
+
+  it("are checked against the contract", () => {
+    expect(
+      scenarioSchema.safeParse(
+        scenario({
+          steps: [{ turn: "each", do: "arsenal", filter: { name: "A" } }],
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      scenarioSchema.safeParse(
+        scenario({ steps: [{ turn: "each", do: "teleport" }] as never }),
+      ).success,
+    ).toBe(false);
+    expect(
+      scenarioSchema.safeParse(
+        scenario({ steps: [{ turn: 1, do: "draw", count: 0 }] }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("draws extra cards", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 10 }], 10);
+    const steps = [{ turn: 1 as const, do: "draw" as const, count: 2 }];
+    expect(rate({ horizon: 1, steps, condition: count(6) }, deck)).toBe(1);
+    expect(rate({ horizon: 1, steps, condition: count(7) }, deck)).toBe(0);
+  });
+
+  it("don't run for the opening hand", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 10 }], 10);
+    const steps = [{ turn: 1 as const, do: "draw" as const, count: 2 }];
+    expect(rate({ horizon: 0, steps, condition: count(5) }, deck)).toBe(0);
+  });
+
+  it("pitch a matching card out of the hand", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 10 }], 10);
+    const steps = [
+      { turn: 1 as const, do: "pitch" as const, filter: { name: "A" } },
+    ];
+    expect(rate({ horizon: 1, steps, condition: count(4) }, deck)).toBe(0);
+    expect(rate({ horizon: 1, steps, condition: count(3) }, deck)).toBe(1);
+  });
+
+  it("put the lowest-pitch matching card in arsenal, kept between turns", () => {
+    const deck = buildDeck(
+      [
+        { card: card("A", { pitch: 3 }), copies: 2 },
+        { card: card("A", { id: "A1", pitch: 1 }), copies: 2 },
+      ],
+      4,
+    );
+    const steps = [
+      { turn: 1 as const, do: "arsenal" as const, filter: { name: "A" } },
+    ];
+    expect(
+      rate(
+        {
+          horizon: 1,
+          access: ["arsenal"],
+          steps,
+          condition: count(1, { pitch: 1 }),
+        },
+        deck,
+      ),
+    ).toBe(1);
+  });
+
+  it("only fill an empty arsenal", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 10 }], 10);
+    const steps = [
+      { turn: "each" as const, do: "arsenal" as const, filter: {} },
+    ];
+    // Fresh hands each turn, the arsenal kept: still one card in it by turn 3.
+    expect(
+      rate(
+        { horizon: 3, access: ["arsenal"], steps, condition: count(2) },
+        deck,
+      ),
+    ).toBe(0);
+    expect(
+      rate(
+        { horizon: 3, access: ["arsenal"], steps, condition: count(1) },
+        deck,
+      ),
+    ).toBe(1);
+  });
+
+  it("banish from hand, where the banished zone can see it", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 10 }], 10);
+    const steps = [
+      { turn: "each" as const, do: "banish" as const, filter: {} },
+    ];
+    expect(
+      rate(
+        { horizon: 2, access: ["banished"], steps, condition: count(2) },
+        deck,
+      ),
+    ).toBe(1);
+  });
+
+  it("block with cards, and draw back up next turn when cards stay", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 20 }], 20);
+    const steps = [{ turn: 1 as const, do: "block" as const, count: 3 }];
+    expect(rate({ horizon: 1, steps, condition: count(1) }, deck)).toBe(1);
+    expect(rate({ horizon: 1, steps, condition: count(2) }, deck)).toBe(0);
+    expect(
+      rate(
+        { horizon: 2, turnModel: "drawUp", steps, condition: count(4) },
+        deck,
+      ),
+    ).toBe(1);
+  });
+});
