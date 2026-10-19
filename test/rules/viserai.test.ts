@@ -127,7 +127,7 @@ describe("Become the Shadow Lord", () => {
 });
 
 describe("Viserai, the Forsaken", () => {
-  it("traverses as the third Runechant this turn is made, and no longer banishes on the Usurper", () => {
+  it("cards making 1, 2 then 1 Runechant: banish, banish and traverse, then nothing on the Usurper", () => {
     let s = game([MAKES(1), MAKES(2), MAKES(1)]);
     const [a, b, c] = s.zones.hand.map((i) => i.uid);
     s = { ...s, actionPoints: 3 };
