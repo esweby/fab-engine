@@ -24,7 +24,13 @@ export {
   type Choose,
   type Effect,
 } from "./effects.ts";
-export { endTurn, pitchCard, playCard } from "./play.ts";
+export {
+  activateGate,
+  attackWithWeapon,
+  endTurn,
+  pitchCard,
+  playCard,
+} from "./play.ts";
 export {
   parseTriggers,
   resolveTriggers,

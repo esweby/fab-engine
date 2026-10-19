@@ -45,6 +45,8 @@ export interface Trigger {
   condition?: Check;
   /** "You may": the player is asked first. */
   optional?: boolean;
+  /** "Once per turn": fires at most once a turn (per card, for a card's own trigger). */
+  oncePerTurn?: boolean;
   effects: Effect[];
 }
 
@@ -67,6 +69,9 @@ const EVENT_TYPES = [
   "arcaneDamage",
   "lifeLost",
   "endPhaseStarted",
+  "playedFromBanish",
+  "gateActivated",
+  "countersChanged",
 ] as const satisfies readonly RulesEvent["type"][];
 
 const zone = z.enum(ZONES);
@@ -81,6 +86,7 @@ const triggerSchema = z.strictObject({
   }),
   condition: checkSchema.optional(),
   optional: z.boolean().optional(),
+  oncePerTurn: z.boolean().optional(),
   effects: z.array(effectSchema),
 });
 
@@ -145,17 +151,24 @@ export function resolveTriggers(
     trigger: Trigger;
     event: RulesEvent;
     self: string | undefined;
+    tokens: Record<string, number>;
   }[] = [];
+  const onceKey = (t: Trigger, self: string | undefined) =>
+    `${t.id}:${self ?? ""}`;
   for (;;) {
     for (; cursor < s.events.length; cursor++) {
       const event = s.events[cursor]!;
       for (const { trigger, self } of triggersInPlay(s))
         if (
           matches(trigger.on, event, self) &&
+          !(
+            trigger.oncePerTurn &&
+            s.usedThisTurn.includes(onceKey(trigger, self))
+          ) &&
           (!trigger.condition ||
             holds(s, trigger.condition, bindingsFor(event, self)))
         )
-          pending.push({ trigger, event, self });
+          pending.push({ trigger, event, self, tokens: { ...s.tokens } });
     }
     const next = pending.shift();
     if (!next) return s;
@@ -164,7 +177,11 @@ export function resolveTriggers(
         `More than ${s.budget} triggers resolved in one action; the run stops here.`,
         s.events,
       );
-    const { trigger, event, self } = next;
+    const { trigger, event, self, tokens } = next;
+    if (trigger.oncePerTurn) {
+      if (s.usedThisTurn.includes(onceKey(trigger, self))) continue;
+      s = { ...s, usedThisTurn: [...s.usedThisTurn, onceKey(trigger, self)] };
+    }
     if (trigger.optional) {
       const request: ChoiceRequest = {
         kind: "confirm",
@@ -183,6 +200,7 @@ export function resolveTriggers(
       trigger.effects,
       choose,
       bindingsFor(event, self),
+      tokens,
     );
   }
 }

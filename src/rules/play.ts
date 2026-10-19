@@ -31,7 +31,16 @@ export function playCard(
 ): RulesState {
   const { card } = instance(s, uid);
   const from = zoneOf(s, uid);
-  if (from !== "hand" && from !== "arsenal")
+  if (from === "banished") {
+    // UNVERIFIED reading: a face-down card can't be played from there.
+    if (
+      s.faceDown.includes(uid) ||
+      !(card.playableFromBanish || s.playableThisTurn.includes(uid))
+    )
+      throw new RulesError(
+        `${card.name} can't be played from the banished zone.`,
+      );
+  } else if (from !== "hand" && from !== "arsenal")
     throw new RulesError(`${card.name} isn't in hand or arsenal.`);
   if (s.phase !== "action")
     throw new RulesError(`Cards are played in the action phase.`);
@@ -61,13 +70,26 @@ export function playCard(
       type: "usurped",
       uid,
     });
+  // Attacks wait in the arena; auras stay there until destroyed; other actions resolve.
+  const stays = attack || card.traits.includes("aura");
+  const moved = moveCard(
+    {
+      ...paid,
+      playableThisTurn: paid.playableThisTurn.filter((u) => u !== uid),
+    },
+    uid,
+    stays ? "arena" : "graveyard",
+  );
   const played = withEvents(
-    moveCard(paid, uid, attack ? "arena" : "graveyard"),
+    moved,
+    ...(from === "banished"
+      ? [{ type: "playedFromBanish" as const, uid }]
+      : []),
     { type: "played", uid, cost },
     ...(attack ? [{ type: "attackPlayed" as const, uid }] : []),
   );
   const resolved = resolveTriggers(
-    runEffects(played, card.effects, choose),
+    runEffects(played, card.effects, choose, new Map([["self", [uid]]])),
     s.events.length,
     choose,
   );
@@ -103,6 +125,92 @@ export function endTurn(
   return resolveTriggers(
     finishEndPhase(started, options),
     started.events.length,
+    choose,
+  );
+}
+
+const isActionCard = (type: string | undefined) =>
+  type === "action" || type === "attack_action";
+
+/**
+ * Gate to i'Arathael: "Instant – {r}, destroy this: You may play target action card with blood
+ * debt from your banished zone this turn."
+ */
+export function activateGate(
+  s: RulesState,
+  target: string,
+  choose: Choose = noChoices,
+): RulesState {
+  if ((s.tokens.gate ?? 0) < 1)
+    throw new RulesError("No Gate to i'Arathael to activate.");
+  const { card } = instance(s, target);
+  if (
+    zoneOf(s, target) !== "banished" ||
+    !isActionCard(card.type) ||
+    !card.traits.includes("blood_debt")
+  )
+    throw new RulesError(
+      `${card.name} isn't an action card with blood debt in your banished zone.`,
+    );
+  if (s.resources < 1)
+    throw new RulesError(
+      `Activating a Gate costs 1 resource; ${s.resources} available.`,
+    );
+  const paid = removeTokens({ ...s, resources: s.resources - 1 }, "gate", 1);
+  const activated = withEvents(
+    {
+      ...paid,
+      activatedThisTurn: {
+        ...paid.activatedThisTurn,
+        gate: (paid.activatedThisTurn.gate ?? 0) + 1,
+      },
+      playableThisTurn: [...paid.playableThisTurn, target],
+    },
+    { type: "gateActivated", target },
+  );
+  return resolveTriggers(activated, s.events.length, choose);
+}
+
+/** A weapon's attack: an action, paid for, once a turn ({t}). Combat is out of scope. */
+export function attackWithWeapon(
+  s: RulesState,
+  uid: string,
+  choose: Choose = noChoices,
+): RulesState {
+  const { card } = instance(s, uid);
+  if (zoneOf(s, uid) !== "weapons" || !card.weaponAttack)
+    throw new RulesError(`${card.name} can't attack.`);
+  if (s.phase !== "action")
+    throw new RulesError("Weapons attack in the action phase.");
+  if (s.usedThisTurn.includes(uid))
+    throw new RulesError(`${card.name} has already attacked this turn.`);
+  const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+  if (
+    card.weaponAttack.needsPlayedFromBanish &&
+    !s.events.slice(turnStart + 1).some((e) => e.type === "playedFromBanish")
+  )
+    throw new RulesError(
+      `${card.name} needs a card played from a banished zone this turn.`,
+    );
+  if (s.actionPoints < 1) throw new RulesError("No action point left.");
+  const cost = card.weaponAttack.cost;
+  if (cost > s.resources)
+    throw new RulesError(
+      `${card.name} costs ${cost} to attack; ${s.resources} available.`,
+    );
+  const declared = withEvents(
+    {
+      ...s,
+      resources: s.resources - cost,
+      actionPoints: s.actionPoints - 1,
+      usedThisTurn: [...s.usedThisTurn, uid],
+    },
+    { type: "attackPlayed", uid },
+  );
+  const resolved = resolveTriggers(declared, s.events.length, choose);
+  return resolveTriggers(
+    withEvents(resolved, { type: "attacking", uid }),
+    resolved.events.length,
     choose,
   );
 }

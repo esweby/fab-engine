@@ -1,14 +1,15 @@
-// Rules data for Viserai (docs/rules-engine.md, step 5a), written from the printed text the
+// Rules data for Viserai (docs/rules-engine.md, step 5), written from the printed text the
 // maintainer supplied on 19 Oct 2026, Gate to i'Arathael from Fabrary, and Blood Debt from LSS's
-// "Rules Reprise: Usurp the Shadow Throne Limited" (10 Sep 2026). Every entry AWAITS THE
-// MAINTAINER'S SIGN-OFF of the interaction tests in test/rules/viserai.test.ts.
+// "Rules Reprise: Usurp the Shadow Throne Limited" (10 Sep 2026).
 //
-// Our readings, to confirm:
-// - "The first attack action card with blood debt you play each turn" counts plays from the
-//   whole turn, whichever side Viserai was on.
-// - Runechants are destroyed when an attack is played; "when this attacks" comes after, so a
-//   Runechant made then survives.
-// - Each Runechant is its own source of arcane damage; the engine records the total.
+// Step 5a (test/rules/viserai.test.ts) was signed off by the maintainer on 19 Oct 2026,
+// including two readings: "the first attack action card with blood debt you play each turn"
+// counts the whole turn, whichever side Viserai was on; and a Runechant made "when this
+// attacks" survives, as Runechants are destroyed when the attack is played.
+// Step 5b (test/rules/banish-gates.test.ts) AWAITS SIGN-OFF.
+//
+// Each Runechant destroys itself ("destroy this"), so only those in play when the attack was
+// played go; the engine records the arcane damage as a total.
 import { parseEffects, type Effect } from "./effects.ts";
 import type { RulesCard } from "./state.ts";
 import { parseTriggers, type Trigger } from "./triggers.ts";
@@ -98,7 +99,35 @@ interface CardRules {
   effects: Effect[];
   usurp?: boolean;
   triggers?: Trigger[];
+  playableFromBanish?: boolean;
+  weaponAttack?: RulesCard["weaponAttack"];
 }
+
+/** Malefic Incantation: the same text at each pitch, with 3, 2 or 1 verse counters. */
+const malefic = (verses: number): CardRules => ({
+  // "Go again. This enters the arena with N verse counters. When it has none, destroy it."
+  effects: parseEffects([{ op: "addCounters", amount: verses }]),
+  // "Once per turn, when you play an attack action card, remove a verse counter from this. If
+  // you do, create a Runechant token."
+  triggers: parseTriggers([
+    {
+      id: "malefic-incantation",
+      on: { event: "played" },
+      condition: {
+        all: [
+          { cardIs: { type: "attack_action" }, target: "event" },
+          { counters: 1, target: "self" },
+        ],
+      },
+      oncePerTurn: true,
+      effects: [
+        { op: "removeCounter" },
+        { op: "createToken", token: "runechant", amount: 1 },
+        { op: "destroySelfIfNoCounters" },
+      ],
+    },
+  ]),
+});
 
 /** Verified effects by card name. A card not here is unmodelled: the engine won't play it. */
 export const CARD_RULES: Record<string, CardRules> = {
@@ -120,13 +149,18 @@ export const CARD_RULES: Record<string, CardRules> = {
     ]),
   },
   // "You may play this from your banished zone. Usurp. When this hits a hero, they banish a card
-  // from their hand. Blood Debt" — playing from banish is step 5b; on-hit is out of scope.
-  "Cullingsong Gloomblade": { effects: [], usurp: true },
+  // from their hand. Blood Debt" — the hit is out of scope.
+  "Cullingsong Gloomblade": {
+    effects: [],
+    usurp: true,
+    playableFromBanish: true,
+  },
   // "You may play this from your banished zone. Usurp. When this attacks or hits, create a
   // Runechant token. Blood Debt" — the hit is out of scope.
   "Murmuring Gloomblade": {
     effects: [],
     usurp: true,
+    playableFromBanish: true,
     triggers: parseTriggers([
       {
         id: "murmuring-attacks",
@@ -135,10 +169,23 @@ export const CARD_RULES: Record<string, CardRules> = {
       },
     ]),
   },
+  // "Action – {r}, {t}: Attack. Activate this only if you've played a card from a banished zone
+  // this turn. When this hits a hero, create a Runechant token." — the hit is out of scope.
+  "Seven Sin Nebula": {
+    effects: [],
+    weaponAttack: { cost: 1, needsPlayedFromBanish: true },
+  },
+};
+
+/** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
+const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  "Malefic Incantation": { 1: malefic(3), 2: malefic(2), 3: malefic(1) },
 };
 
 /** A card with its verified rules attached, or as it was (unmodelled) when it has none. */
 export function cardWithRules(card: RulesCard): RulesCard {
-  const rules = CARD_RULES[card.name];
+  const rules =
+    CARD_RULES[card.name] ??
+    (card.pitch === null ? undefined : BY_PITCH[card.name]?.[card.pitch]);
   return rules ? { ...card, ...rules } : card;
 }

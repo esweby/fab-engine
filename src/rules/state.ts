@@ -27,6 +27,10 @@ export interface RulesCard extends EngineCard {
   usurp?: boolean;
   /** The card's own triggers, live while it's in the arena; "self" binds the card. */
   triggers?: Trigger[];
+  /** "You may play this from your banished zone." */
+  playableFromBanish?: boolean;
+  /** A weapon's attack: its cost, and whether it needs a card played from banish this turn. */
+  weaponAttack?: { cost: number; needsPlayedFromBanish?: boolean };
 }
 
 export interface RulesInstance {
@@ -53,6 +57,9 @@ export type RulesEvent =
   | { type: "arcaneDamage"; amount: number }
   | { type: "lifeLost"; amount: number }
   | { type: "endPhaseStarted"; turn: number }
+  | { type: "playedFromBanish"; uid: string }
+  | { type: "gateActivated"; target: string }
+  | { type: "countersChanged"; uid: string; delta: number }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
@@ -72,6 +79,12 @@ export interface RulesState {
   activatedThisTurn: Record<string, number>;
   /** Life lost so far (blood debt); damage to an opponent is out of scope. */
   lifeLost: number;
+  /** Counters on cards (Malefic's verse counters), by card copy. */
+  counters: Record<string, number>;
+  /** Cards that may be played from the banished zone this turn (a Gate's target). */
+  playableThisTurn: string[];
+  /** Weapons that have attacked and once-per-turn triggers that have fired, this turn. */
+  usedThisTurn: string[];
   resources: number;
   actionPoints: number;
   /** Everything that happened, in order. */
@@ -190,6 +203,9 @@ export function setUp(setup: RulesSetup): RulesState {
     createdThisTurn: {},
     activatedThisTurn: {},
     lifeLost: 0,
+    counters: {},
+    playableThisTurn: [],
+    usedThisTurn: [],
     resources: 0,
     actionPoints: 0,
     events: [],
@@ -315,6 +331,8 @@ export function finishEndPhase(
       actionPoints: 0,
       createdThisTurn: {},
       activatedThisTurn: {},
+      playableThisTurn: [],
+      usedThisTurn: [],
     },
     { type: "turnEnded", turn: s.turn },
   );
@@ -339,6 +357,8 @@ export function checkInvariants(s: RulesState): void {
   if (s.actionPoints < 0) throw new RulesError("Action points below zero.");
   for (const [token, n] of Object.entries(s.tokens))
     if (n < 0) throw new RulesError(`${token} tokens below zero.`);
+  for (const [uid, n] of Object.entries(s.counters))
+    if (n < 0) throw new RulesError(`Counters on ${uid} below zero.`);
   for (const uid of s.faceDown)
     if (!seen.has(uid)) throw new RulesError(`Face-down card ${uid} is gone.`);
 }

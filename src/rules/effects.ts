@@ -19,6 +19,10 @@ export type Check =
   | { has: string; target: string }
   | { createdThisTurn: string; atLeast: number }
   | { activatedThisTurn: string; atLeast: number }
+  /** The bound card is of this type and/or has this trait. */
+  | { cardIs: { type?: string; trait?: string }; target: string }
+  /** The bound card has at least this many counters. */
+  | { counters: number; target: string }
   /** The bound card is the first card played this turn matching the filter. */
   | {
       firstPlayedThisTurn: { type?: string; trait?: string };
@@ -49,6 +53,11 @@ export type Effect =
   | { op: "destroyAllTokens"; token: string; arcaneEach: number }
   /** Lose 1 life for each face-up card with the trait in the banished zone (Blood Debt). */
   | { op: "loseLifePerBanished"; trait: string }
+  /** Counters on this card ("self"). */
+  | { op: "addCounters"; amount: number }
+  | { op: "removeCounter" }
+  /** "When it has none, destroy it": this card to the graveyard once it has no counters. */
+  | { op: "destroySelfIfNoCounters" }
   | { op: "if"; check: Check; then: Effect[]; else?: Effect[] };
 
 const name = z.string().min(1).max(40);
@@ -65,6 +74,14 @@ export const checkSchema: z.ZodType<Check> = z.lazy(() =>
       activatedThisTurn: name,
       atLeast: z.number().int().min(0),
     }),
+    z.strictObject({
+      cardIs: z.strictObject({
+        type: name.optional(),
+        trait: name.optional(),
+      }),
+      target: name,
+    }),
+    z.strictObject({ counters: z.number().int().min(0), target: name }),
     z.strictObject({
       firstPlayedThisTurn: z.strictObject({
         type: name.optional(),
@@ -99,6 +116,9 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
       arcaneEach: z.number().int().min(0).max(10),
     }),
     z.strictObject({ op: z.literal("loseLifePerBanished"), trait: name }),
+    z.strictObject({ op: z.literal("addCounters"), amount }),
+    z.strictObject({ op: z.literal("removeCounter") }),
+    z.strictObject({ op: z.literal("destroySelfIfNoCounters") }),
     z.strictObject({
       op: z.literal("if"),
       check: checkSchema,
@@ -203,6 +223,20 @@ export function holds(
   if ("tokens" in check) return (s.tokens[check.tokens] ?? 0) >= check.atLeast;
   if ("activatedThisTurn" in check)
     return (s.activatedThisTurn[check.activatedThisTurn] ?? 0) >= check.atLeast;
+  if ("cardIs" in check) {
+    const target = (bindings.get(check.target) ?? [])[0];
+    if (!target) return false;
+    const c = instance(s, target).card;
+    return (
+      (check.cardIs.type === undefined || c.type === check.cardIs.type) &&
+      (check.cardIs.trait === undefined ||
+        c.traits.includes(check.cardIs.trait))
+    );
+  }
+  if ("counters" in check) {
+    const target = (bindings.get(check.target) ?? [])[0];
+    return !!target && (s.counters[target] ?? 0) >= check.counters;
+  }
   if ("firstPlayedThisTurn" in check) {
     const target = (bindings.get(check.target) ?? [])[0];
     const f = check.firstPlayedThisTurn;
@@ -236,7 +270,22 @@ export function runEffects(
   effects: Effect[],
   choose: Choose,
   bindings: Map<string, string[]> = new Map(),
+  /** Tokens in play when the triggering event happened ("destroy this" on each token). */
+  tokensAtEvent?: Record<string, number>,
 ): RulesState {
+  const self = () => {
+    const uid = (bindings.get("self") ?? [])[0];
+    if (!uid) throw new RulesError("This effect needs the card it's on.");
+    return uid;
+  };
+  const changeCounters = (st: RulesState, uid: string, delta: number) =>
+    withEvents(
+      {
+        ...st,
+        counters: { ...st.counters, [uid]: (st.counters[uid] ?? 0) + delta },
+      },
+      { type: "countersChanged", uid, delta },
+    );
   let s = state;
   for (const e of effects) {
     switch (e.op) {
@@ -289,7 +338,10 @@ export function runEffects(
         break;
       }
       case "destroyAllTokens": {
-        const n = s.tokens[e.token] ?? 0;
+        const now = s.tokens[e.token] ?? 0;
+        const n = tokensAtEvent
+          ? Math.min(now, tokensAtEvent[e.token] ?? 0)
+          : now;
         if (n > 0) {
           s = removeTokens(s, e.token, n);
           if (e.arcaneEach > 0)
@@ -311,12 +363,28 @@ export function runEffects(
           );
         break;
       }
+      case "addCounters":
+        s = changeCounters(s, self(), e.amount);
+        break;
+      case "removeCounter":
+        if ((s.counters[self()] ?? 0) > 0) s = changeCounters(s, self(), -1);
+        break;
+      case "destroySelfIfNoCounters": {
+        const uid = self();
+        if (
+          (s.counters[uid] ?? 0) === 0 &&
+          s.zones.arena.some((i) => i.uid === uid)
+        )
+          s = moveCard(s, uid, "graveyard");
+        break;
+      }
       case "if":
         s = runEffects(
           s,
           holds(s, e.check, bindings) ? e.then : (e.else ?? []),
           choose,
           new Map(bindings),
+          tokensAtEvent,
         );
         break;
     }
