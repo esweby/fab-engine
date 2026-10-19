@@ -129,12 +129,16 @@ export const scenarioSchema = z.strictObject({
 });
 export type ScenarioDefinition = z.infer<typeof scenarioSchema>;
 
+const FAILED_SEEDS = 5;
+
 export interface ScenarioResult {
   successRate: number;
   /** Success if checked after each turn's draw, turns 1 to the horizon. */
   byTurn: number[];
   /** Blocks that were false in failed runs, most common first. */
   failures: { label: string; share: number }[];
+  /** The shuffle seeds of a few failed runs, to open in goldfish (newGame with the same seed). */
+  failedSeeds: number[];
   inputs: {
     runs: number;
     seed: number;
@@ -177,29 +181,32 @@ export class ScenarioCannotRun extends Error {
 
 const COLOUR: Record<number, string> = { 1: "red", 2: "yellow", 3: "blue" };
 
-/** Takes each fixed card's copy out of the deck, or says why it can't. */
-function takeFixed(
-  cards: (EngineCard | null)[],
-  fixed: NonNullable<ScenarioDefinition["fixed"]>,
+/** A card assumed to already be in hand or arsenal (the scenario contract's fixed cards). */
+export type FixedCard = NonNullable<ScenarioDefinition["fixed"]>[number];
+
+/**
+ * Takes each fixed card's copy out of the deck, or says why it can't. Scenarios and goldfish
+ * both use it, so a run's seed deals the same game in each.
+ */
+export function takeFixed<T>(
+  items: readonly T[],
+  cardOf: (item: T) => EngineCard | null,
+  fixed: readonly FixedCard[],
 ) {
-  const rest = [...cards];
-  const placed = fixed.map((f) => {
-    const i = rest.findIndex(
-      (c) =>
-        c &&
-        c.name === f.name &&
-        (f.pitch === undefined || c.pitch === f.pitch),
+  const fits = (f: FixedCard, item: T) => {
+    const c = cardOf(item);
+    return (
+      !!c && c.name === f.name && (f.pitch === undefined || c.pitch === f.pitch)
     );
+  };
+  const rest = [...items];
+  const placed = fixed.map((f) => {
+    const i = rest.findIndex((item) => fits(f, item));
     if (i < 0) {
       const wanted = fixed.filter(
         (g) => g.name === f.name && g.pitch === f.pitch,
       ).length;
-      const has = cards.filter(
-        (c) =>
-          c &&
-          c.name === f.name &&
-          (f.pitch === undefined || c.pitch === f.pitch),
-      ).length;
+      const has = items.filter((item) => fits(f, item)).length;
       const what =
         f.pitch === undefined
           ? f.name
@@ -208,12 +215,12 @@ function takeFixed(
         `Needs ${wanted} ${wanted === 1 ? "copy" : "copies"} of ${what}; the deck has ${has}.`,
       );
     }
-    return { card: rest.splice(i, 1)[0]!, zone: f.zone };
+    return { item: rest.splice(i, 1)[0]!, zone: f.zone };
   });
   return {
     rest,
-    hand: placed.filter((p) => p.zone === "hand").map((p) => p.card),
-    arsenal: placed.filter((p) => p.zone === "arsenal").map((p) => p.card),
+    hand: placed.filter((p) => p.zone === "hand").map((p) => p.item),
+    arsenal: placed.filter((p) => p.zone === "arsenal").map((p) => p.item),
   };
 }
 
@@ -283,14 +290,16 @@ export function runScenario(
   const successByTurn = Array.from({ length: turns }, () => 0);
   const falseCounts = new Map<string, number>();
   let successes = 0;
+  const failedSeeds: number[] = [];
   const seeds = random(options.seed);
 
-  const fixed = takeFixed(deck.cards, def.fixed ?? []);
+  const fixed = takeFixed(deck.cards, (c) => c, def.fixed ?? []);
   const sees = (zone: (typeof def.access)[number]) => def.access.includes(zone);
   const gear = deck.gear ?? [];
 
   for (let run = 0; run < options.runs; run++) {
-    const order = shuffle(fixed.rest, Math.floor(seeds() * 2 ** 31));
+    const runSeed = Math.floor(seeds() * 2 ** 31);
+    const order = shuffle(fixed.rest, runSeed);
     const table = tableByTurn(
       order,
       fixed.hand,
@@ -310,6 +319,7 @@ export function runScenario(
     const falseBlocks = new Set<string>();
     if (evaluate(def.condition, visible[turns - 1]!, falseBlocks)) successes++;
     else {
+      if (failedSeeds.length < FAILED_SEEDS) failedSeeds.push(runSeed);
       for (const label of falseBlocks) {
         falseCounts.set(label, (falseCounts.get(label) ?? 0) + 1);
       }
@@ -323,6 +333,7 @@ export function runScenario(
     failures: [...falseCounts]
       .map(([label, n]) => ({ label, share: n / failed }))
       .sort((a, b) => b.share - a.share),
+    failedSeeds,
     inputs: {
       runs: options.runs,
       seed: options.seed,

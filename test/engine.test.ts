@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDeck,
+  newGame,
   runScenario,
   ScenarioCannotRun,
   scenarioSchema,
@@ -428,5 +429,45 @@ describe("the scenario contract", () => {
         deck,
       ),
     ).toBe(1);
+  });
+});
+
+// Phase two step 8 (README "Failed hands"): each failed run's seed loads that exact shuffle in
+// goldfish, fixed cards and all.
+describe("failed hands", () => {
+  const deck = buildDeck(
+    [
+      { card: card("A"), copies: 1 },
+      { card: card("B"), copies: 19 },
+    ],
+    20,
+  );
+
+  it("keeps the seeds of a few failed runs", () => {
+    const r = runScenario(scenario(), deck, { runs: 200, seed: 3 });
+    expect(r.failedSeeds.length).toBeGreaterThan(0);
+    expect(r.failedSeeds.length).toBeLessThanOrEqual(5);
+  });
+
+  it("deals a failed run's hand in a new game from its seed", () => {
+    const r = runScenario(scenario(), deck, { runs: 200, seed: 3 });
+    for (const seed of r.failedSeeds) {
+      const hand = newGame({ deck: deck.cards as EngineCard[], seed }).present
+        .zones.hand;
+      expect(hand).toHaveLength(4);
+      expect(hand.map((c) => c.card.name)).not.toContain("A");
+    }
+  });
+
+  it("does the same with fixed cards, taking the same copy out of the deck", () => {
+    const fixed = [{ name: "B", zone: "hand" as const }];
+    const r = runScenario(scenario({ fixed }), deck, { runs: 200, seed: 3 });
+    for (const seed of r.failedSeeds) {
+      const game = newGame({ deck: deck.cards as EngineCard[], seed, fixed })
+        .present;
+      expect(game.zones.hand).toHaveLength(4);
+      expect(game.zones.hand.map((c) => c.card.name)).not.toContain("A");
+      expect(game.zones.deck).toHaveLength(16);
+    }
   });
 });

@@ -3,7 +3,13 @@
 // shuffle, changed only by actions. It moves cards and counts things; it knows no card rules.
 // Ending a turn follows the basic turn rules (pitched cards go to the bottom of the deck, then
 // draw up to intellect): UNVERIFIED, for a player to check.
-import { random, shuffle, type EngineCard } from "./index.ts";
+import {
+  random,
+  shuffle,
+  takeFixed,
+  type EngineCard,
+  type FixedCard,
+} from "./index.ts";
 
 export const ZONES = [
   "deck",
@@ -95,6 +101,8 @@ export interface GameSetup {
   /** Starting life; 40 by default (UNVERIFIED for the new Viserai). */
   life?: number;
   side?: HeroSide;
+  /** Cards assumed to already be in hand or arsenal, as a scenario fixes them. */
+  fixed?: FixedCard[];
 }
 
 const emptyZones = (): Record<Zone, CardInstance[]> =>
@@ -252,10 +260,15 @@ export function apply(state: GameState, action: GameAction): GameState {
 /** A new game: the deck shuffled with the seed, the loadout in play, and a hand drawn. */
 export function newGame(setup: GameSetup): GameHistory {
   const zones = emptyZones();
-  zones.deck = shuffle(
+  // Fixed cards come out before the shuffle, exactly as a scenario run does it.
+  const fixed = takeFixed(
     setup.deck.map((card, i) => ({ uid: `d${i}`, card })),
-    setup.seed,
+    (c) => c.card,
+    setup.fixed ?? [],
   );
+  zones.deck = shuffle(fixed.rest, setup.seed);
+  zones.hand = fixed.hand;
+  zones.arsenal = fixed.arsenal;
   zones.weapons = (setup.weapons ?? []).map((card, i) => ({
     uid: `w${i}`,
     card,
@@ -283,7 +296,7 @@ export function newGame(setup: GameSetup): GameHistory {
       damageTotal: 0,
       log: [],
     },
-    intellect,
+    intellect - fixed.hand.length,
   );
   return { past: [], present: state, future: [] };
 }
