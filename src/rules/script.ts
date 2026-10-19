@@ -1,0 +1,312 @@
+// Scripts and the scripted policy (docs/rules-engine.md, step 6). A script is data: a few step
+// kinds, a bounded repeat and an if on the state, never a language. The scripted policy only
+// ever picks among cards the rules allow right now, by fixed rules, so the same setup and script
+// always give the same trace.
+//
+// UNVERIFIED policy choices (not game rules, but they shape results): a play pays by pitching
+// the highest pitch first; among cards that fit a step, the lowest pitch goes first, then hand,
+// arsenal and banished-zone order; optional triggers are used unless the script says no.
+import { z } from "zod";
+import {
+  checkSchema,
+  holds,
+  validateBindings,
+  type Check,
+  type ChoiceRequest,
+  type Choose,
+} from "./effects.ts";
+import {
+  activateGate,
+  attackWithWeapon,
+  endTurn,
+  pitchCard,
+  playCard,
+} from "./play.ts";
+import {
+  RulesBudgetExceeded,
+  RulesError,
+  setUp,
+  type RulesEvent,
+  type RulesInstance,
+  type RulesSetup,
+  type RulesState,
+} from "./state.ts";
+
+export interface Selector {
+  name?: string;
+  type?: string;
+  trait?: string;
+  pitch?: number;
+}
+
+export type ScriptStep =
+  | { do: "play"; card: Selector }
+  | { do: "pitch"; card: Selector }
+  | { do: "activateGate"; target: Selector }
+  | { do: "attackWithWeapon"; weapon?: Selector }
+  | { do: "endTurn"; arsenal?: Selector }
+  | { do: "repeat"; times: number; steps: ScriptStep[] }
+  | { do: "if"; check: Check; then: ScriptStep[]; else?: ScriptStep[] }
+  | { do: "stop" };
+
+export interface Script {
+  version: 1;
+  choices?: {
+    /** When a card must be banished from hand: the first of these that fits, in order. */
+    banish?: Selector[];
+    /** Optional triggers by id: false to decline. Unlisted ones are used. */
+    optional?: Record<string, boolean>;
+  };
+  steps: ScriptStep[];
+}
+
+const text = z.string().min(1).max(60);
+const selectorSchema = z.strictObject({
+  name: text.optional(),
+  type: text.optional(),
+  trait: text.optional(),
+  pitch: z.number().int().min(0).max(3).optional(),
+});
+const stepSchema: z.ZodType<ScriptStep> = z.lazy(() =>
+  z.union([
+    z.strictObject({ do: z.literal("play"), card: selectorSchema }),
+    z.strictObject({ do: z.literal("pitch"), card: selectorSchema }),
+    z.strictObject({ do: z.literal("activateGate"), target: selectorSchema }),
+    z.strictObject({
+      do: z.literal("attackWithWeapon"),
+      weapon: selectorSchema.optional(),
+    }),
+    z.strictObject({
+      do: z.literal("endTurn"),
+      arsenal: selectorSchema.optional(),
+    }),
+    z.strictObject({
+      do: z.literal("repeat"),
+      times: z.number().int().min(1).max(10),
+      steps: z.array(stepSchema).max(50),
+    }),
+    z.strictObject({
+      do: z.literal("if"),
+      check: checkSchema,
+      then: z.array(stepSchema).max(50),
+      else: z.array(stepSchema).max(50).optional(),
+    }),
+    z.strictObject({ do: z.literal("stop") }),
+  ]),
+);
+const scriptSchema = z.strictObject({
+  version: z.literal(1),
+  choices: z
+    .strictObject({
+      banish: z.array(selectorSchema).max(20).optional(),
+      optional: z.record(text, z.boolean()).optional(),
+    })
+    .optional(),
+  steps: z.array(stepSchema).max(200),
+});
+
+function checkStepBindings(steps: ScriptStep[]) {
+  for (const step of steps) {
+    if (step.do === "if") {
+      // Scripts bind nothing: a check reads the state only.
+      validateBindings(step.check, [], new Set());
+      checkStepBindings(step.then);
+      checkStepBindings(step.else ?? []);
+    }
+    if (step.do === "repeat") checkStepBindings(step.steps);
+  }
+}
+
+/** Script data checked against the schema before any run. */
+export function parseScript(data: unknown): Script {
+  const parsed = scriptSchema.safeParse(data);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    throw new RulesError(
+      `Invalid script at ${issue.path.join(".") || "the top"}: ${issue.message}`,
+    );
+  }
+  checkStepBindings(parsed.data.steps);
+  return parsed.data;
+}
+
+const fits = (i: RulesInstance, sel: Selector) =>
+  (sel.name === undefined || i.card.name === sel.name) &&
+  (sel.type === undefined || i.card.type === sel.type) &&
+  (sel.trait === undefined || i.card.traits.includes(sel.trait)) &&
+  (sel.pitch === undefined || i.card.pitch === sel.pitch);
+
+/** Cards in these zones that fit, lowest pitch first, then zone order and position. */
+function candidates(
+  s: RulesState,
+  sel: Selector,
+  zones: (keyof RulesState["zones"])[],
+) {
+  return zones
+    .flatMap((z) => s.zones[z])
+    .map((i, order) => ({ i, order }))
+    .filter(({ i }) => fits(i, sel))
+    .sort(
+      (a, b) =>
+        (a.i.card.pitch ?? Infinity) - (b.i.card.pitch ?? Infinity) ||
+        a.order - b.order,
+    )
+    .map(({ i }) => i.uid);
+}
+
+/** The scripted policy's answers to the rules' choices. */
+function scriptedChoices(script: Script, current: () => RulesState): Choose {
+  return (request: ChoiceRequest) => {
+    if (request.kind === "confirm")
+      return script.choices?.optional?.[request.source ?? ""] === false
+        ? []
+        : ["yes"];
+    const s = current();
+    const options = request.options.map((uid) =>
+      [...s.zones.hand, ...s.zones.graveyard, ...s.zones.deck].find(
+        (i) => i.uid === uid,
+      )!,
+    );
+    const preferred = request.prompt.startsWith("Banish")
+      ? (script.choices?.banish ?? [])
+      : [];
+    const ranked = [
+      ...preferred.flatMap((sel) => options.filter((i) => fits(i, sel))),
+      ...[...options].sort(
+        (a, b) => (a.card.pitch ?? Infinity) - (b.card.pitch ?? Infinity),
+      ),
+    ];
+    return [...new Set(ranked.map((i) => i.uid))].slice(0, request.count);
+  };
+}
+
+/** Pitch from hand, highest pitch first, until a card's cost is covered. */
+function payFor(s: RulesState, uid: string, choose: Choose): RulesState {
+  const card = [...s.zones.hand, ...s.zones.arsenal, ...s.zones.banished].find(
+    (i) => i.uid === uid,
+  )!.card;
+  let next = s;
+  const pitchable = s.zones.hand
+    .filter((i) => i.uid !== uid && i.card.pitch !== null)
+    .map((i, order) => ({ i, order }))
+    .sort((a, b) => b.i.card.pitch! - a.i.card.pitch! || a.order - b.order);
+  for (const { i } of pitchable) {
+    if (next.resources >= (card.cost ?? 0)) break;
+    next = pitchCard(next, i.uid, choose);
+  }
+  return next;
+}
+
+export interface StepOutcome {
+  step: ScriptStep["do"];
+  outcome: "done" | "skipped";
+  /** Why a step was skipped. */
+  reason?: string;
+}
+
+export interface ScriptRun {
+  state: RulesState;
+  /** Every event, in order: the run's full trace. */
+  trace: RulesEvent[];
+  steps: StepOutcome[];
+  /** Set when the run stopped early (the processing budget); its trace is kept. */
+  failure?: string;
+}
+
+class Stop {}
+
+/** Runs a script from a setup. The same setup and script always give the same run. */
+export function runScript(setup: RulesSetup, script: Script): ScriptRun {
+  let state = setUp(setup);
+  const steps: StepOutcome[] = [];
+  const choose = scriptedChoices(script, () => state);
+
+  /** Tries each candidate in order; the first the rules allow is done. */
+  function attempt(
+    step: ScriptStep["do"],
+    uids: string[],
+    act: (s: RulesState, uid: string) => RulesState,
+  ) {
+    if (uids.length === 0) {
+      steps.push({
+        step,
+        outcome: "skipped",
+        reason: "No card fits the step.",
+      });
+      return;
+    }
+    let reason = "";
+    for (const uid of uids) {
+      try {
+        state = act(state, uid);
+        steps.push({ step, outcome: "done" });
+        return;
+      } catch (e) {
+        if (!(e instanceof RulesError) || e instanceof RulesBudgetExceeded)
+          throw e;
+        reason = e.message;
+      }
+    }
+    steps.push({ step, outcome: "skipped", reason });
+  }
+
+  function run(list: ScriptStep[]) {
+    for (const step of list) {
+      switch (step.do) {
+        case "play":
+          attempt(
+            "play",
+            candidates(state, step.card, ["hand", "arsenal", "banished"]),
+            (s, uid) => playCard(payFor(s, uid, choose), uid, choose),
+          );
+          break;
+        case "pitch":
+          attempt("pitch", candidates(state, step.card, ["hand"]), (s, uid) =>
+            pitchCard(s, uid, choose),
+          );
+          break;
+        case "activateGate":
+          attempt(
+            "activateGate",
+            candidates(state, step.target, ["banished"]),
+            (s, uid) => activateGate(s, uid, choose),
+          );
+          break;
+        case "attackWithWeapon":
+          attempt(
+            "attackWithWeapon",
+            candidates(state, step.weapon ?? {}, ["weapons"]),
+            (s, uid) => attackWithWeapon(s, uid, choose),
+          );
+          break;
+        case "endTurn": {
+          const arsenal = step.arsenal
+            ? candidates(state, step.arsenal, ["hand"])[0]
+            : undefined;
+          state = endTurn(state, { arsenal }, choose);
+          steps.push({ step: "endTurn", outcome: "done" });
+          break;
+        }
+        case "repeat":
+          for (let n = 0; n < step.times; n++) run(step.steps);
+          break;
+        case "if":
+          run(
+            holds(state, step.check, new Map()) ? step.then : (step.else ?? []),
+          );
+          break;
+        case "stop":
+          throw new Stop();
+      }
+    }
+  }
+
+  try {
+    run(script.steps);
+  } catch (e) {
+    if (e instanceof RulesBudgetExceeded)
+      return { state, trace: e.events, steps, failure: e.message };
+    if (!(e instanceof Stop)) throw e;
+  }
+  return { state, trace: state.events, steps };
+}

@@ -189,6 +189,7 @@ export function resolveTriggers(
         options: ["yes"],
         count: 1,
         optional: true,
+        source: trigger.id,
       };
       const answer = choose(request);
       if (answer.length > 1 || (answer.length === 1 && answer[0] !== "yes"))

@@ -188,6 +188,8 @@ export interface ChoiceRequest {
   count: number;
   /** Whether choosing none is allowed. */
   optional: boolean;
+  /** The trigger asking, for a confirm (e.g. "viserai-usurper-traverse"). */
+  source?: string;
 }
 export type Choose = (request: ChoiceRequest) => string[];
 
