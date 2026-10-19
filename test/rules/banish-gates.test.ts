@@ -2,8 +2,8 @@
 // Nebula's attack and Malefic Incantation, from their printed text (maintainer, Fabrary and the
 // local card data, 19 Oct 2026).
 //
-// Each test's expected outcome is read from that text and AWAITS THE MAINTAINER'S SIGN-OFF.
-// Readings that are ours, flagged where used:
+// Each test's expected outcome is read from that text; signed off by the maintainer on
+// 19 Oct 2026, including these readings:
 // - A face-down card in the banished zone can't be played from there.
 // - {t} on a weapon means it attacks once a turn.
 // - Malefic's Runechant survives the attack that made it: it didn't exist when the attack was

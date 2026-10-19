@@ -2,8 +2,8 @@
 // real cards, from their printed text (supplied by the maintainer, 19 Oct 2026; Gate to
 // i'Arathael from Fabrary; Blood Debt from LSS's "Rules Reprise: Usurp the Shadow Throne").
 //
-// Each test's expected outcome is read from that text and AWAITS THE MAINTAINER'S SIGN-OFF.
-// Two readings are ours, flagged where used:
+// Each test's expected outcome is read from that text; signed off by the maintainer on
+// 19 Oct 2026, including these two readings:
 // - Usurper go again counts blood debt attacks played earlier that turn, on either side.
 // - "When this attacks" comes after the Runechants are destroyed for playing the attack.
 import { describe, expect, it } from "vitest";

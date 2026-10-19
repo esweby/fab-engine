@@ -6,7 +6,9 @@
 // including two readings: "the first attack action card with blood debt you play each turn"
 // counts the whole turn, whichever side Viserai was on; and a Runechant made "when this
 // attacks" survives, as Runechants are destroyed when the attack is played.
-// Step 5b (test/rules/banish-gates.test.ts) AWAITS SIGN-OFF.
+// Step 5b (test/rules/banish-gates.test.ts) was signed off on 19 Oct 2026, including its readings:
+// face-down banished cards can't be played, {t} means a weapon attacks once a turn, and
+// Malefic's Runechant survives the attack that made it.
 //
 // Each Runechant destroys itself ("destroy this"), so only those in play when the attack was
 // played go; the engine records the arcane damage as a total.
