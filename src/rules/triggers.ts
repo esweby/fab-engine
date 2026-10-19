@@ -72,6 +72,9 @@ const EVENT_TYPES = [
   "playedFromBanish",
   "gateActivated",
   "countersChanged",
+  "manual",
+  "damageNoted",
+  "shuffled",
 ] as const satisfies readonly RulesEvent["type"][];
 
 const zone = z.enum(ZONES);

@@ -60,10 +60,17 @@ export type RulesEvent =
   | { type: "playedFromBanish"; uid: string }
   | { type: "gateActivated"; target: string }
   | { type: "countersChanged"; uid: string; delta: number }
+  /** A goldfish change made by hand: no rules applied, nothing set off. */
+  | { type: "manual"; action: string }
+  /** Damage dealt, noted by hand in goldfish (combat is out of scope). */
+  | { type: "damageNoted"; amount: number }
+  | { type: "shuffled" }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
 export interface RulesState {
+  /** The game's seed: the deck's first shuffle and every later one. */
+  seed: number;
   turn: number;
   phase: Phase;
   side: HeroSide;
@@ -135,7 +142,7 @@ export function instance(s: RulesState, uid: string): RulesInstance {
   return s.zones[zone].find((i) => i.uid === uid)!;
 }
 
-function draw(s: RulesState, count: number): RulesState {
+export function draw(s: RulesState, count: number): RulesState {
   const drawn = s.zones.deck.slice(0, Math.max(0, count));
   if (drawn.length === 0) return s;
   return withEvents(
@@ -193,6 +200,7 @@ export function setUp(setup: RulesSetup): RulesState {
   }));
   const intellect = setup.intellect ?? 4;
   const state: RulesState = {
+    seed: setup.seed,
     turn: 1,
     phase: "start",
     side: setup.side ?? "forsaken",

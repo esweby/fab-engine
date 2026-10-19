@@ -66,3 +66,9 @@ export {
   type TurnRecord,
   type TurnReport,
 } from "./batch.ts";
+export {
+  applySessionAction,
+  NeedsChoice,
+  replaySession,
+  type SessionAction,
+} from "./session.ts";
