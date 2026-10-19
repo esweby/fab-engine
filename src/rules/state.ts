@@ -10,6 +10,7 @@
 import { ZONES, type HeroSide, type Zone } from "../game.ts";
 import { shuffle, type EngineCard } from "../index.ts";
 import type { Effect } from "./effects.ts";
+import type { Trigger } from "./triggers.ts";
 
 /** A card as the rules engine needs it: the counting engine's card, plus cost and go again. */
 export interface RulesCard extends EngineCard {
@@ -41,6 +42,7 @@ export type RulesEvent =
   | { type: "tokensRemoved"; token: string; amount: number }
   | { type: "resourcesGained"; amount: number }
   | { type: "actionPointGained" }
+  | { type: "triggered"; trigger: string }
   | { type: "turnEnded"; turn: number }
   | { type: "turnStarted"; turn: number };
 
@@ -60,11 +62,26 @@ export interface RulesState {
   actionPoints: number;
   /** Everything that happened, in order. */
   events: RulesEvent[];
+  /** Triggers in play (hero text, token rules), checked against every event. */
+  triggers: Trigger[];
+  /** Most triggers one action may resolve: a safeguard against loops, not a game rule. */
+  budget: number;
 }
 
 /** Something the rules don't allow; the state is left as it was. */
 export class RulesError extends Error {
   override name = "RulesError";
+}
+
+/** A run that resolved more triggers than its budget: failed, with its trace kept. */
+export class RulesBudgetExceeded extends RulesError {
+  override name = "RulesBudgetExceeded";
+  constructor(
+    message: string,
+    readonly events: RulesEvent[],
+  ) {
+    super(message);
+  }
 }
 
 const emptyZones = () =>
@@ -125,6 +142,9 @@ export interface RulesSetup {
   side?: HeroSide;
   /** Viserai's intellect is 4. */
   intellect?: number;
+  triggers?: Trigger[];
+  /** Most triggers one action may resolve (default 1,000). */
+  budget?: number;
 }
 
 /**
@@ -157,6 +177,8 @@ export function setUp(setup: RulesSetup): RulesState {
     resources: 0,
     actionPoints: 0,
     events: [],
+    triggers: setup.triggers ?? [],
+    budget: setup.budget ?? 1000,
   };
   return startTurn(draw(state, intellect));
 }
@@ -192,8 +214,11 @@ export function moveCard(
   );
 }
 
-/** Pitch a card from hand: to the pitch zone, adding its pitch value to resources. */
-export function pitchCard(s: RulesState, uid: string): RulesState {
+/**
+ * Pitch a card from hand: to the pitch zone, adding its pitch value to resources. Without
+ * triggers: the engine's pitchCard (play.ts) resolves them.
+ */
+export function pitchOnly(s: RulesState, uid: string): RulesState {
   const { card } = instance(s, uid);
   if (card.pitch === null)
     throw new RulesError(`${card.name} can't be pitched.`);
@@ -243,9 +268,9 @@ export function removeTokens(
 /**
  * The end phase: optionally a card from hand into an empty arsenal, pitched cards to the
  * bottom of the deck, the turn's counters reset, a draw up to intellect, and the next turn's
- * action phase.
+ * action phase. Without triggers: the engine's endTurn (play.ts) resolves them.
  */
-export function endTurn(
+export function endTurnOnly(
   s: RulesState,
   options: { arsenal?: string } = {},
 ): RulesState {

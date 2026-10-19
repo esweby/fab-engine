@@ -41,7 +41,7 @@ export type Effect =
 
 const name = z.string().min(1).max(40);
 const amount = z.number().int().min(1).max(20);
-const checkSchema: z.ZodType<Check> = z.lazy(() =>
+export const checkSchema: z.ZodType<Check> = z.lazy(() =>
   z.union([
     z.strictObject({ has: name, target: name }),
     z.strictObject({
@@ -55,7 +55,7 @@ const checkSchema: z.ZodType<Check> = z.lazy(() =>
     z.strictObject({ not: checkSchema }),
   ]),
 );
-const effectSchema: z.ZodType<Effect> = z.lazy(() =>
+export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
   z.union([
     z.strictObject({
       op: z.literal("banish"),
@@ -114,9 +114,22 @@ export function parseEffects(data: unknown): Effect[] {
   return parsed.data;
 }
 
+/** A condition and effects whose bindings must all be set, given the ones bound already. */
+export function validateBindings(
+  condition: Check | undefined,
+  effects: Effect[],
+  bound: Set<string>,
+) {
+  for (const b of condition ? bindingsUsed(condition) : [])
+    if (!bound.has(b))
+      throw new RulesError(`Binding "${b}" is used before it is set.`);
+  checkBindings(effects, bound);
+}
+
 /** A choice the rules leave to the player. */
 export interface ChoiceRequest {
-  kind: "cards";
+  /** cards: pick from card ids; confirm: options ["yes"], choose it or nothing. */
+  kind: "cards" | "confirm";
   /** Why, in plain words: "Banish a card from hand". */
   prompt: string;
   /** The legal options, as card ids. */
@@ -146,7 +159,7 @@ function checkChoice(request: ChoiceRequest, chosen: string[]) {
     );
 }
 
-function holds(
+export function holds(
   s: RulesState,
   check: Check,
   bindings: Map<string, string[]>,

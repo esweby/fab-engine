@@ -1,9 +1,12 @@
-// Playing a card (docs/rules-engine.md, steps 2 and 3): pay for it, move it, then run its
-// verified effects. A card with no verified effects can't be played by the engine.
-// UNVERIFIED turn rules: see state.ts.
+// The player's actions (docs/rules-engine.md, steps 2 to 4): play, pitch and end the turn. Each
+// resolves the triggers its events set off before it returns. A card with no verified effects
+// can't be played by the engine. UNVERIFIED turn rules: see state.ts.
 import { noChoices, runEffects, type Choose } from "./effects.ts";
+import { resolveTriggers } from "./triggers.ts";
 import {
+  endTurnOnly,
   instance,
+  pitchOnly,
   moveCard,
   RulesError,
   withEvents,
@@ -55,5 +58,27 @@ export function playCard(
     { type: "played", uid, cost },
     ...(attack ? [{ type: "attackPlayed" as const, uid }] : []),
   );
-  return runEffects(played, card.effects, choose);
+  return resolveTriggers(
+    runEffects(played, card.effects, choose),
+    s.events.length,
+    choose,
+  );
+}
+
+/** Pitch a card from hand, then resolve what it sets off. */
+export function pitchCard(
+  s: RulesState,
+  uid: string,
+  choose: Choose = noChoices,
+): RulesState {
+  return resolveTriggers(pitchOnly(s, uid), s.events.length, choose);
+}
+
+/** End the turn (see endTurnOnly), then resolve what it sets off. */
+export function endTurn(
+  s: RulesState,
+  options: { arsenal?: string } = {},
+  choose: Choose = noChoices,
+): RulesState {
+  return resolveTriggers(endTurnOnly(s, options), s.events.length, choose);
 }
