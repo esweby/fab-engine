@@ -27,11 +27,26 @@ export interface CardInstance {
 
 export type GameAction =
   | { type: "draw"; count?: number }
-  | { type: "move"; uid: string; to: Zone; position?: "top" | "bottom" }
+  | {
+      type: "move";
+      uid: string;
+      to: Zone;
+      position?: "top" | "bottom";
+      /** Banish face down (or any move face down); a later move turns it face up. */
+      faceDown?: boolean;
+    }
   | { type: "token"; token: string; delta: number }
   /** Move a card to the pitch zone and add its pitch value to resources. */
   | { type: "pitch"; uid: string }
   | { type: "resources"; delta: number }
+  /** Attack with a weapon: marks it used this turn. */
+  | { type: "attack"; uid: string }
+  /** Mark a weapon or piece of equipment used, or unused again. */
+  | { type: "use"; uid: string }
+  | { type: "counter"; uid: string; delta: number }
+  | { type: "life"; delta: number }
+  /** Damage dealt, entered by hand. */
+  | { type: "damage"; delta: number }
   | { type: "traverse" }
   | { type: "shuffle" }
   | { type: "endTurn" };
@@ -48,6 +63,15 @@ export interface GameState {
   createdThisTurn: Record<string, number>;
   /** Resources available to spend. */
   resources: number;
+  /** Weapons and equipment used this turn, by card copy. */
+  used: string[];
+  /** Counters on weapons and equipment, by card copy. */
+  counters: Record<string, number>;
+  /** Cards lying face down, by card copy. */
+  faceDown: string[];
+  life: number;
+  damageThisTurn: number;
+  damageTotal: number;
   /** Every action so far, so a game can be replayed from its seed. */
   log: GameAction[];
 }
@@ -68,6 +92,8 @@ export interface GameSetup {
   seed: number;
   /** Viserai's intellect is 4. */
   intellect?: number;
+  /** Starting life; 40 by default (UNVERIFIED for the new Viserai). */
+  life?: number;
   side?: HeroSide;
 }
 
@@ -113,7 +139,12 @@ export function apply(state: GameState, action: GameAction): GameState {
           action.to === "deck" && action.position !== "bottom"
             ? [moving, ...zones[action.to]]
             : [...zones[action.to], moving];
-        return { ...state, zones };
+        const faceUp = state.faceDown.filter((u) => u !== action.uid);
+        return {
+          ...state,
+          zones,
+          faceDown: action.faceDown ? [...faceUp, action.uid] : faceUp,
+        };
       }
       case "token":
         return {
@@ -152,6 +183,36 @@ export function apply(state: GameState, action: GameAction): GameState {
           ...state,
           resources: Math.max(0, state.resources + action.delta),
         };
+      case "attack":
+        return state.used.includes(action.uid)
+          ? state
+          : { ...state, used: [...state.used, action.uid] };
+      case "use":
+        return {
+          ...state,
+          used: state.used.includes(action.uid)
+            ? state.used.filter((u) => u !== action.uid)
+            : [...state.used, action.uid],
+        };
+      case "counter":
+        return {
+          ...state,
+          counters: {
+            ...state.counters,
+            [action.uid]: Math.max(
+              0,
+              (state.counters[action.uid] ?? 0) + action.delta,
+            ),
+          },
+        };
+      case "life":
+        return { ...state, life: state.life + action.delta };
+      case "damage":
+        return {
+          ...state,
+          damageThisTurn: Math.max(0, state.damageThisTurn + action.delta),
+          damageTotal: Math.max(0, state.damageTotal + action.delta),
+        };
       case "traverse":
         return {
           ...state,
@@ -173,6 +234,8 @@ export function apply(state: GameState, action: GameAction): GameState {
           turn: state.turn + 1,
           resources: 0,
           createdThisTurn: {},
+          used: [],
+          damageThisTurn: 0,
           zones: {
             ...state.zones,
             deck: [...state.zones.deck, ...state.zones.pitch],
@@ -212,6 +275,12 @@ export function newGame(setup: GameSetup): GameHistory {
       tokens: {},
       createdThisTurn: {},
       resources: 0,
+      used: [],
+      counters: {},
+      faceDown: [],
+      life: setup.life ?? 40,
+      damageThisTurn: 0,
+      damageTotal: 0,
       log: [],
     },
     intellect,

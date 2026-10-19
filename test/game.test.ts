@@ -213,3 +213,56 @@ describe("goldfishing helpers", () => {
     expect(redo(start)).toEqual(start);
   });
 });
+
+// Goldfishing part 2 (README "Goldfishing": weapon and equipment actions, life and damage).
+describe("gear, life and damage", () => {
+  it("attacking with a weapon marks it used this turn; end turn clears it", () => {
+    let h = setup();
+    const blade = h.present.zones.weapons[0]!.uid;
+    h = act(h, { type: "attack", uid: blade });
+    expect(h.present.used).toEqual([blade]);
+    h = act(h, { type: "endTurn" });
+    expect(h.present.used).toEqual([]);
+  });
+
+  it("marks equipment used, or unused again", () => {
+    let h = setup();
+    const grasp = h.present.zones.equipment[0]!.uid;
+    h = act(h, { type: "use", uid: grasp });
+    expect(h.present.used).toEqual([grasp]);
+    h = act(h, { type: "use", uid: grasp });
+    expect(h.present.used).toEqual([]);
+  });
+
+  it("keeps counters on a piece, never below zero", () => {
+    let h = setup();
+    const grasp = h.present.zones.equipment[0]!.uid;
+    h = act(h, { type: "counter", uid: grasp, delta: 2 });
+    h = act(h, { type: "counter", uid: grasp, delta: -3 });
+    expect(h.present.counters).toEqual({ [grasp]: 0 });
+  });
+
+  it("starts at 40 life unless told otherwise, and counts it", () => {
+    expect(setup().present.life).toBe(40);
+    let h = newGame({ deck: deckOf(5), seed: 1, life: 20 });
+    h = act(h, { type: "life", delta: -3 });
+    expect(h.present.life).toBe(17);
+  });
+
+  it("counts damage dealt this turn and in total; end turn clears this turn's", () => {
+    let h = act(setup(), { type: "damage", delta: 4 });
+    h = act(h, { type: "damage", delta: 3 });
+    expect([h.present.damageThisTurn, h.present.damageTotal]).toEqual([7, 7]);
+    h = act(h, { type: "endTurn" });
+    expect([h.present.damageThisTurn, h.present.damageTotal]).toEqual([0, 7]);
+  });
+
+  it("banishes face down, and a card moved on is face up again", () => {
+    let h = setup();
+    const c = h.present.zones.hand[0]!.uid;
+    h = act(h, { type: "move", uid: c, to: "banished", faceDown: true });
+    expect(h.present.faceDown).toEqual([c]);
+    h = act(h, { type: "move", uid: c, to: "graveyard" });
+    expect(h.present.faceDown).toEqual([]);
+  });
+});
