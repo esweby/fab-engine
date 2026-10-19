@@ -53,3 +53,16 @@ export {
   type Selector,
   type StepOutcome,
 } from "./script.ts";
+export {
+  compareBatches,
+  coverage,
+  rulesDataVersion,
+  runBatch,
+  type BanishQuery,
+  type BatchOptions,
+  type BatchReport,
+  type BatchSetup,
+  type RunSummary,
+  type TurnRecord,
+  type TurnReport,
+} from "./batch.ts";
