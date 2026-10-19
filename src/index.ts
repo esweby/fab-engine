@@ -226,3 +226,5 @@ export function runScenario(
     },
   };
 }
+
+export * from "./game.ts";
