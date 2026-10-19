@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDeck,
   runScenario,
+  ScenarioCannotRun,
   scenarioSchema,
   shuffle,
   type EngineCard,
@@ -222,5 +223,210 @@ describe("runScenario", () => {
       blanks: 57,
       engineVersion: expect.any(String),
     });
+  });
+});
+
+// Phase two step 6 (README "The scenario contract" and "Building a rule").
+describe("the scenario contract", () => {
+  const a = (min: number, filter: Record<string, unknown> = { name: "A" }) => ({
+    all: [{ label: "x", filter, min }],
+  });
+  const rate = (
+    over: Partial<ScenarioDefinition>,
+    deck: ReturnType<typeof buildDeck>,
+    runs = 200,
+  ) => runScenario(scenario(over), deck, { runs, seed: 2 }).successRate;
+
+  describe("fixed cards", () => {
+    it("takes one copy out of the deck per entry, and puts it where the scenario says", () => {
+      // One A in 60: fixed in hand, it's always there, and no copy is left to draw.
+      const deck = buildDeck([{ card: card("A"), copies: 1 }], 60);
+      expect(
+        rate({ fixed: [{ name: "A", zone: "hand" }], condition: a(1) }, deck),
+      ).toBe(1);
+      expect(
+        rate({ fixed: [{ name: "A", zone: "hand" }], condition: a(2) }, deck),
+      ).toBe(0);
+    });
+
+    it("draws the rest of the hand up to intellect around fixed hand cards", () => {
+      const deck = buildDeck(
+        [
+          { card: card("A"), copies: 1 },
+          { card: card("B"), copies: 10 },
+        ],
+        11,
+      );
+      // A fixed in hand, then 3 more drawn: never 4 Bs.
+      expect(
+        rate(
+          {
+            fixed: [{ name: "A", zone: "hand" }],
+            condition: a(4, { name: "B" }),
+          },
+          deck,
+        ),
+      ).toBe(0);
+      expect(
+        rate(
+          {
+            fixed: [{ name: "A", zone: "hand" }],
+            condition: a(3, { name: "B" }),
+          },
+          deck,
+        ),
+      ).toBe(1);
+    });
+
+    it("can match a pitch, so a fixed red copy leaves the blue ones", () => {
+      const deck = buildDeck(
+        [
+          { card: card("A", { pitch: 1 }), copies: 1 },
+          { card: card("A", { id: "A3", pitch: 3 }), copies: 1 },
+        ],
+        2,
+      );
+      expect(() =>
+        runScenario(
+          scenario({ fixed: [{ name: "A", pitch: 3, zone: "hand" }] }),
+          deck,
+          { runs: 5, seed: 1 },
+        ),
+      ).not.toThrow();
+      expect(() =>
+        runScenario(
+          scenario({
+            fixed: [
+              { name: "A", pitch: 3, zone: "hand" },
+              { name: "A", pitch: 3, zone: "arsenal" },
+            ],
+          }),
+          deck,
+          { runs: 5, seed: 1 },
+        ),
+      ).toThrow(ScenarioCannotRun);
+    });
+
+    it("can't run, and says so, when the deck lacks the copies", () => {
+      const deck = buildDeck([{ card: card("A"), copies: 1 }], 60);
+      expect(() =>
+        runScenario(
+          scenario({
+            fixed: [
+              { name: "A", zone: "hand" },
+              { name: "A", zone: "hand" },
+            ],
+          }),
+          deck,
+          { runs: 5, seed: 1 },
+        ),
+      ).toThrow("Needs 2 copies of A; the deck has 1.");
+    });
+
+    it("holds one card in the arsenal", () => {
+      expect(
+        scenarioSchema.safeParse(
+          scenario({
+            fixed: [
+              { name: "A", zone: "arsenal" },
+              { name: "B", zone: "arsenal" },
+            ],
+          }),
+        ).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("what conditions can see", () => {
+    const deck = () => buildDeck([{ card: card("A"), copies: 1 }], 60);
+
+    it("sees the arsenal only when access includes it", () => {
+      const fixed = [{ name: "A", zone: "arsenal" as const }];
+      expect(rate({ fixed, access: ["hand"], condition: a(1) }, deck())).toBe(
+        0,
+      );
+      expect(
+        rate({ fixed, access: ["hand", "arsenal"], condition: a(1) }, deck()),
+      ).toBe(1);
+    });
+
+    it("can see the top card of the deck", () => {
+      // 4 in hand and the top card: 5 of 60.
+      const r = rate(
+        { access: ["hand", "topOfDeck"], condition: a(1) },
+        deck(),
+        20000,
+      );
+      expect(r).toBeGreaterThan(0.075);
+      expect(r).toBeLessThan(0.092);
+    });
+
+    it("always sees the weapon and equipment slots", () => {
+      const withGear = buildDeck([{ card: card("B"), copies: 4 }], 4, [
+        card("Blade", { type: "weapon" }),
+      ]);
+      expect(rate({ condition: a(1, { type: "weapon" }) }, withGear)).toBe(1);
+    });
+  });
+
+  describe("blocks", () => {
+    it("can count distinct cards instead of copies", () => {
+      const deck = buildDeck([{ card: card("A"), copies: 4 }], 4);
+      const block = (distinct: boolean) => ({
+        all: [{ label: "x", filter: {}, min: 2, distinct }],
+      });
+      expect(rate({ condition: block(false) }, deck)).toBe(1);
+      expect(rate({ condition: block(true) }, deck)).toBe(0);
+    });
+
+    it("compares with at most and exactly, as well as at least", () => {
+      const deck = buildDeck([{ card: card("A"), copies: 4 }], 4);
+      const block = (min: number, max?: number) => ({
+        all: [{ label: "x", filter: {}, min, max }],
+      });
+      expect(rate({ condition: block(0, 3) }, deck)).toBe(0);
+      expect(rate({ condition: block(4, 4) }, deck)).toBe(1);
+      expect(rate({ condition: block(0, 4) }, deck)).toBe(1);
+    });
+
+    it("filters by card type", () => {
+      const deck = buildDeck(
+        [{ card: card("A", { type: "attack_action" }), copies: 4 }],
+        4,
+      );
+      expect(rate({ condition: a(4, { type: "attack_action" }) }, deck)).toBe(
+        1,
+      );
+      expect(rate({ condition: a(1, { type: "instant" }) }, deck)).toBe(0);
+    });
+  });
+
+  it("keeps cards between turns when the turn model draws up, and keeps the arsenal", () => {
+    const deck = buildDeck(
+      [
+        { card: card("A"), copies: 1 },
+        { card: card("B"), copies: 59 },
+      ],
+      60,
+    );
+    const fixed = [{ name: "A", zone: "hand" as const }];
+    expect(
+      rate({ horizon: 3, turnModel: "drawUp", fixed, condition: a(1) }, deck),
+    ).toBe(1);
+    expect(
+      rate({ horizon: 3, turnModel: "fresh", fixed, condition: a(1) }, deck),
+    ).toBe(0);
+    expect(
+      rate(
+        {
+          horizon: 3,
+          turnModel: "fresh",
+          access: ["hand", "arsenal"],
+          fixed: [{ name: "A", zone: "arsenal" }],
+          condition: a(1),
+        },
+        deck,
+      ),
+    ).toBe(1);
   });
 });
