@@ -72,3 +72,4 @@ export {
   replaySession,
   type SessionAction,
 } from "./session.ts";
+export { describeCheck, describeEffects } from "./describe.ts";
