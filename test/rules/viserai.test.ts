@@ -8,6 +8,7 @@
 // - "When this attacks" comes after the Runechants are destroyed for playing the attack.
 import { describe, expect, it } from "vitest";
 import {
+  applySessionAction,
   BLOOD_DEBT,
   cardWithRules,
   endTurn,
@@ -179,6 +180,65 @@ describe("Runechants and Usurp", () => {
     expect(names(next, "banished")).toEqual(["Deck 0"]);
     const types = next.events.map((e) => e.type);
     expect(types.indexOf("usurped")).toBeLessThan(types.indexOf("attacking"));
+  });
+});
+
+// The maintainer, 20 Oct 2026: Murmuring, played on the Forsaken, made the third Runechant of the
+// turn; traversing to the Usurper "would give the murmuring go again", and then Cullingsong could
+// be played from banish. Same reading as above: the first blood debt attack of the turn, on either
+// side. UNVERIFIED detail: the attack is taken to be still on the chain, as attacks stay in the
+// arena until the turn ends (combat is out of scope).
+describe("traversing to the Usurper after a blood debt attack", () => {
+  it("gives Murmuring go again when its Runechant makes Viserai traverse", () => {
+    let s: RulesState = {
+      ...game([MURMURING(), CULLINGSONG()]),
+      resources: 2,
+      createdThisTurn: { runechant: 2 },
+    };
+    s = playCard(s, uid(s, "Murmuring Gloomblade"));
+    expect(s.side).toBe("usurper");
+    expect(s.actionPoints).toBe(1);
+    // The action point plays Cullingsong (from hand here; from banish it's the same point).
+    s = playCard(s, uid(s, "Cullingsong Gloomblade"));
+    expect(s.actionPoints).toBe(0);
+  });
+
+  // "It applies to any blood debt card that triggers a third runechant" (the maintainer).
+  it("gives the attack go again whichever card makes the third Runechant", () => {
+    const instantMakes3 = { ...MAKES(3), type: "instant" };
+    let s: RulesState = game([CULLINGSONG(), instantMakes3]);
+    s = playCard(s, uid(s, "Cullingsong Gloomblade"));
+    expect(s.actionPoints).toBe(0);
+    s = playCard(s, uid(s, "Makes 3"));
+    expect(s.side).toBe("usurper");
+    expect(s.actionPoints).toBe(1);
+  });
+
+  it("gives it go again when Viserai is traversed by hand", () => {
+    let s: RulesState = { ...game([MURMURING()]), resources: 2 };
+    s = playCard(s, uid(s, "Murmuring Gloomblade"));
+    expect(s.actionPoints).toBe(0);
+    s = applySessionAction(s, { type: "traverse" });
+    expect(s.side).toBe("usurper");
+    expect(s.actionPoints).toBe(1);
+  });
+
+  it("doesn't give it twice, nor to an attack played on the Usurper already", () => {
+    let s: RulesState = {
+      ...game([MURMURING()], { side: "usurper" }),
+      resources: 2,
+    };
+    s = playCard(s, uid(s, "Murmuring Gloomblade"));
+    expect(s.actionPoints).toBe(1);
+    s = applySessionAction(s, { type: "traverse" });
+    s = applySessionAction(s, { type: "traverse" });
+    expect(s.side).toBe("usurper");
+    expect(s.actionPoints).toBe(1);
+  });
+
+  it("does nothing with no blood debt attack played this turn", () => {
+    const s = applySessionAction(game([MURMURING()]), { type: "traverse" });
+    expect(s.actionPoints).toBe(1);
   });
 });
 

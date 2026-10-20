@@ -8,7 +8,8 @@
 // applies the action again with the answer recorded on it, so a session's log replays exactly.
 import { shuffle } from "../index.ts";
 import type { Zone } from "../game.ts";
-import type { ChoiceRequest, Choose } from "./effects.ts";
+import { noChoices, type ChoiceRequest, type Choose } from "./effects.ts";
+import { resolveTriggers } from "./triggers.ts";
 import {
   activateCard,
   activateGate,
@@ -172,11 +173,15 @@ export function applySessionAction(
         "damage",
       );
     case "traverse": {
+      // The one manual action that sets something off: Viserai's abilities answer to the side
+      // he's on, however he got there (the maintainer, 20 Oct 2026: traversing by hand to the
+      // Usurper gives the turn's first blood debt attack go again).
       const to = s.side === "forsaken" ? "usurper" : "forsaken";
-      return manual(
+      const traversed = manual(
         withEvents({ ...s, side: to }, { type: "traversed", to }),
         "traverse",
       );
+      return resolveTriggers(traversed, s.events.length, noChoices);
     }
     case "draw":
       return manual(draw(s, action.count ?? 1), "draw");

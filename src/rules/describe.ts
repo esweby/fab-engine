@@ -45,6 +45,10 @@ function check(c: Check): string {
   }
   if ("counters" in c) return `this has ${c.counters} or more counters`;
   if ("firstPlayedThisTurn" in c) return "it's the first such card this turn";
+  if ("firstPlayedThisTurnInArena" in c)
+    return "the first such card this turn is still attacking, without go again";
+  if ("triggeredThisTurn" in c)
+    return `${c.triggeredThisTurn} happened this turn`;
   if ("all" in c) return c.all.map(check).join(" and ");
   if ("any" in c) return c.any.map(check).join(" or ");
   return `not (${check(c.not)})`;

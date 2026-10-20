@@ -28,6 +28,13 @@ export type Check =
       firstPlayedThisTurn: { type?: string; trait?: string };
       target: string;
     }
+  /**
+   * The first card played this turn matching the filter is still in the arena (an attack still
+   * attacking), without go again of its own.
+   */
+  | { firstPlayedThisTurnInArena: { type?: string; trait?: string } }
+  /** A trigger with this id has fired this turn. */
+  | { triggeredThisTurn: string }
   | { tokens: string; atLeast: number }
   | { side: HeroSide }
   | { all: Check[] }
@@ -96,6 +103,13 @@ export const checkSchema: z.ZodType<Check> = z.lazy(() =>
       }),
       target: name,
     }),
+    z.strictObject({
+      firstPlayedThisTurnInArena: z.strictObject({
+        type: name.optional(),
+        trait: name.optional(),
+      }),
+    }),
+    z.strictObject({ triggeredThisTurn: name }),
     z.strictObject({ side: z.enum(["forsaken", "usurper"]) }),
     z.strictObject({ all: z.array(checkSchema).min(1) }),
     z.strictObject({ any: z.array(checkSchema).min(1) }),
@@ -269,6 +283,29 @@ export function holds(
       .slice(turnStart + 1)
       .find((e) => e.type === "played" && fits(e.uid));
     return !!target && !!first && "uid" in first && first.uid === target;
+  }
+  if ("firstPlayedThisTurnInArena" in check) {
+    const f = check.firstPlayedThisTurnInArena;
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    const first = s.events.slice(turnStart + 1).find((e) => {
+      if (e.type !== "played") return false;
+      const c = instance(s, e.uid).card;
+      return (
+        (f.type === undefined || c.type === f.type) &&
+        (f.trait === undefined || c.traits.includes(f.trait))
+      );
+    });
+    if (!first || first.type !== "played") return false;
+    const inArena = s.zones.arena.find((i) => i.uid === first.uid);
+    return !!inArena && !inArena.card.goAgain;
+  }
+  if ("triggeredThisTurn" in check) {
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    return s.events
+      .slice(turnStart + 1)
+      .some(
+        (e) => e.type === "triggered" && e.trigger === check.triggeredThisTurn,
+      );
   }
   if ("side" in check) return s.side === check.side;
   if ("all" in check) return check.all.every((c) => holds(s, c, bindings));

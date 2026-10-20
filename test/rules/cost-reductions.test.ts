@@ -1,9 +1,9 @@
 // Cost reductions (docs/phase-two.md, engine features, 2): "costs {r} less for each Runechant you
 // control" (Rune Flash's shape), "costs {r}{r} less if played from your banished zone" (Grim
 // Feast's), and "costs 6 less if you've usurped this turn" (Usurp the Shadow Throne's). The cards
-// here are made up in those shapes. UNVERIFIED readings: a cost never goes below 0; Runechants are
-// counted as the card is played, before Usurp destroys one; and only a usurp earlier in the turn
-// counts, not the card's own.
+// here are made up in those shapes. Readings signed off by the maintainer, 20 Oct 2026: a cost
+// never goes below 0; Runechants are counted as the card is played, before Usurp destroys one; and
+// only a usurp earlier in the turn counts, not the card's own.
 import { describe, expect, it } from "vitest";
 import {
   playCard,

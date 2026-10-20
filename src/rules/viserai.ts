@@ -52,6 +52,27 @@ export const VISERAI: Trigger[] = parseTriggers([
     },
     effects: [{ op: "gainActionPoint" }],
   },
+  // Traversing to the Usurper after the turn's first blood debt attack was played on the Forsaken:
+  // that attack gets go again now (the maintainer, 20 Oct 2026: whichever card made the third
+  // Runechant). Not if it already had it, from the Usurper or its own text.
+  {
+    id: "viserai-usurper-go-again-on-traverse",
+    on: { event: "traversed" },
+    condition: {
+      all: [
+        { side: "usurper" },
+        {
+          firstPlayedThisTurnInArena: {
+            type: "attack_action",
+            trait: "blood_debt",
+          },
+        },
+        { not: { triggeredThisTurn: "viserai-usurper-go-again" } },
+        { not: { triggeredThisTurn: "viserai-usurper-go-again-on-traverse" } },
+      ],
+    },
+    effects: [{ op: "gainActionPoint" }],
+  },
   {
     id: "viserai-usurper-traverse",
     on: { event: "endPhaseStarted" },
