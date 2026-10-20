@@ -451,6 +451,36 @@ export const CARD_RULES: Record<string, CardRules> = {
       activated("instant", 1, "destroy", [{ op: "opt", amount: 1 }]),
     ]),
   ),
+  // The third batch the maintainer accepted (20 Oct 2026).
+  // "This costs {r} less to play for each Runechant you control." The rest is combat.
+  ...Object.fromEntries(
+    ["Amplify the Arknight", "Ninth Blade of the Blood Oath", "Rune Flash"].map(
+      (name) => [
+        name,
+        { effects: [], costReductions: [{ amount: "perRunechant" as const }] },
+      ],
+    ),
+  ),
+  // Costs {r} less for each Runechant you control; create a Runechant token. The prevention is
+  // combat. A defence reaction, so goldfish doesn't play it in the action phase.
+  "Reduce to Runechant": {
+    effects: parseEffects([
+      { op: "createToken", token: "runechant", amount: 1 },
+    ]),
+    costReductions: [{ amount: "perRunechant" }],
+  },
+  // "If you lose {h} during your turn, destroy Dimenxxional Crossroads." Its arcane damage isn't
+  // modelled (the maintainer, 20 Oct 2026). An aura, so it stays in the arena.
+  "Dimenxxional Crossroads": {
+    effects: [],
+    triggers: parseTriggers([
+      {
+        id: "dimenxxional-crossroads-life-lost",
+        on: { event: "lifeLost" },
+        effects: [{ op: "destroySelf" }],
+      },
+    ]),
+  },
 };
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
