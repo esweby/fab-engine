@@ -131,6 +131,44 @@ const malefic = (verses: number): CardRules => ({
   ]),
 });
 
+/**
+ * A sinchant (Runechant of Envy, Gluttony and so on): "When this is destroyed, create a Runechant
+ * token. At the beginning of your action phase or when you play an attack action card, destroy
+ * this." Destroyed on an attack action card at the maintainer's word (20 Oct 2026); the rest is
+ * the printed text, awaiting sign-off. Not modelled: "This counts as a Runechant", and usurping.
+ */
+const sinchant = (name: string): CardRules => {
+  const destroyed = [
+    { op: "destroySelf" as const },
+    { op: "createToken" as const, token: "runechant", amount: 1 },
+  ];
+  return {
+    effects: [],
+    triggers: parseTriggers([
+      {
+        id: `${name}-attack-action`,
+        on: { event: "played" },
+        condition: { cardIs: { type: "attack_action" }, target: "event" },
+        effects: destroyed,
+      },
+      {
+        id: `${name}-action-phase`,
+        on: { event: "turnStarted" },
+        effects: destroyed,
+      },
+    ]),
+  };
+};
+const SINCHANTS = [
+  "Envy",
+  "Gluttony",
+  "Greed",
+  "Lust",
+  "Pride",
+  "Sloth",
+  "Wrath",
+];
+
 /** Verified effects by card name. A card not here is unmodelled: the engine won't play it. */
 export const CARD_RULES: Record<string, CardRules> = {
   // "Banish a card from your hand. If it's Runeblade, create a Runechant token. If it's Shadow,
@@ -177,6 +215,12 @@ export const CARD_RULES: Record<string, CardRules> = {
     effects: [],
     weaponAttack: { cost: 1, needsPlayedFromBanish: true },
   },
+  ...Object.fromEntries(
+    SINCHANTS.map((sin) => [
+      `Runechant of ${sin}`,
+      sinchant(`runechant-of-${sin.toLowerCase()}`),
+    ]),
+  ),
   // The first batch of drafts the maintainer accepted on the effects page (step 9b; their
   // verdicts, 20 Oct 2026): each card's rules are its accepted draft.
   // "You may play this from your banished zone. Usurp When this hits a hero, you may banish target

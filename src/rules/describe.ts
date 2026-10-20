@@ -86,6 +86,8 @@ function phrase(e: Effect): string {
       return "remove a counter from this";
     case "destroySelfIfNoCounters":
       return "destroy this if it has no counters";
+    case "destroySelf":
+      return "destroy this";
     case "if": {
       const then = e.then.map(phrase).join(", then ");
       const otherwise = e.else?.length

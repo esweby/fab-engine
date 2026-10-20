@@ -63,6 +63,8 @@ export type Effect =
   | { op: "removeCounter" }
   /** "When it has none, destroy it": this card to the graveyard once it has no counters. */
   | { op: "destroySelfIfNoCounters" }
+  /** This card ("self") from the arena to the graveyard (a sinchant destroying itself). */
+  | { op: "destroySelf" }
   | { op: "if"; check: Check; then: Effect[]; else?: Effect[] };
 
 const name = z.string().min(1).max(40);
@@ -129,6 +131,7 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("addCounters"), amount }),
     z.strictObject({ op: z.literal("removeCounter") }),
     z.strictObject({ op: z.literal("destroySelfIfNoCounters") }),
+    z.strictObject({ op: z.literal("destroySelf") }),
     z.strictObject({
       op: z.literal("if"),
       check: checkSchema,
@@ -404,6 +407,12 @@ export function runEffects(
       case "removeCounter":
         if ((s.counters[self()] ?? 0) > 0) s = changeCounters(s, self(), -1);
         break;
+      case "destroySelf": {
+        const uid = self();
+        if (s.zones.arena.some((i) => i.uid === uid))
+          s = moveCard(s, uid, "graveyard");
+        break;
+      }
       case "destroySelfIfNoCounters": {
         const uid = self();
         if (
