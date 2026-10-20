@@ -50,6 +50,14 @@ export function playCard(
     throw new RulesError(
       `${card.name} has no verified effects yet, so the engine can't play it.`,
     );
+  if (card.needsDamageThisTurn) {
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    const dealt = s.events
+      .slice(turnStart + 1)
+      .reduce((n, e) => (e.type === "damageNoted" ? n + e.amount : n), 0);
+    if (dealt < card.needsDamageThisTurn)
+      throw new RulesError(`${card.name} needs damage dealt this turn.`);
+  }
   const action = NEEDS_ACTION_POINT.has(card.type ?? "");
   if (action && s.actionPoints < 1)
     throw new RulesError("No action point left.");

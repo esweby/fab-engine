@@ -36,6 +36,11 @@ export interface RulesCard extends EngineCard {
   playableFromBanish?: boolean;
   /** "If this would be put into your graveyard from anywhere, instead banish it." */
   graveyardToBanish?: boolean;
+  /**
+   * "Play this only if you've dealt damage this turn": at least this much damage noted this turn
+   * (combat is out of scope, so damage is noted by hand).
+   */
+  needsDamageThisTurn?: number;
   /** A weapon's attack: its cost, and whether it needs a card played from banish this turn. */
   weaponAttack?: { cost: number; needsPlayedFromBanish?: boolean };
 }
