@@ -16,6 +16,7 @@ import {
   type Choose,
 } from "./effects.ts";
 import {
+  effectiveCost,
   activateGate,
   attackWithWeapon,
   endTurn,
@@ -227,16 +228,13 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
 
 /** Pitch from hand, highest pitch first, until a card's cost is covered. */
 function payFor(s: RulesState, uid: string, choose: Choose): RulesState {
-  const card = [...s.zones.hand, ...s.zones.arsenal, ...s.zones.banished].find(
-    (i) => i.uid === uid,
-  )!.card;
   let next = s;
   const pitchable = s.zones.hand
     .filter((i) => i.uid !== uid && i.card.pitch !== null)
     .map((i, order) => ({ i, order }))
     .sort((a, b) => b.i.card.pitch! - a.i.card.pitch! || a.order - b.order);
   for (const { i } of pitchable) {
-    if (next.resources >= (card.cost ?? 0)) break;
+    if (next.resources >= effectiveCost(next, uid)) break;
     next = pitchCard(next, i.uid, choose);
   }
   return next;

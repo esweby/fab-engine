@@ -25,6 +25,28 @@ const PLAYABLE_IN_ACTION_PHASE = new Set([
   "instant",
 ]);
 
+/**
+ * What a card costs to play now, after its reductions: Runechants are counted as it's played
+ * (before Usurp destroys one), and a usurp counts only if it came earlier this turn.
+ */
+export function effectiveCost(s: RulesState, uid: string): number {
+  const { card } = instance(s, uid);
+  const cost = card.cost ?? 0;
+  if (!card.costReductions?.length) return cost;
+  const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+  const usurped = s.events
+    .slice(turnStart + 1)
+    .some((e) => e.type === "usurped");
+  const fromBanish = zoneOf(s, uid) === "banished";
+  const off = card.costReductions.reduce((n, r) => {
+    if (r.amount === "perRunechant") return n + (s.tokens.runechant ?? 0);
+    if (r.when === "playedFromBanish" && fromBanish) return n + r.amount;
+    if (r.when === "usurpedThisTurn" && usurped) return n + r.amount;
+    return n;
+  }, 0);
+  return Math.max(0, cost - off);
+}
+
 /** Play a card from hand or arsenal: pay its cost and, for an action, an action point. */
 export function playCard(
   s: RulesState,
@@ -63,7 +85,7 @@ export function playCard(
   const action = NEEDS_ACTION_POINT.has(card.type ?? "");
   if (action && s.actionPoints < 1)
     throw new RulesError("No action point left.");
-  const cost = card.cost ?? 0;
+  const cost = effectiveCost(s, uid);
   if (cost > s.resources)
     throw new RulesError(
       `${card.name} costs ${cost}; ${s.resources} available.`,

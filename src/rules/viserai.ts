@@ -106,6 +106,7 @@ interface CardRules {
   activate?: RulesCard["activate"];
   weaponAttack?: RulesCard["weaponAttack"];
   needsDamageThisTurn?: number;
+  costReductions?: RulesCard["costReductions"];
 }
 
 /** Malefic Incantation: the same text at each pitch, with 3, 2 or 1 verse counters. */
