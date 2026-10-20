@@ -228,6 +228,22 @@ describe("ending the turn", () => {
     expect(() => checkInvariants(next)).not.toThrow();
   });
 
+  // The maintainer, 20 Oct 2026: "End turn should move cards from play to graveyard (unless the
+  // card specifies otherwise)". UNVERIFIED: which cards stay (here auras, items, allies and
+  // landmarks) is a first pass for the maintainer to check.
+  it("clears the arena to the graveyard, leaving permanents in play", () => {
+    let s = withHand(
+      card("Hit", { type: "attack_action" }),
+      card("Aura", { traits: ["aura"] }),
+    );
+    s = playCard(s, inHand(s, "Hit"));
+    s = moveCard(s, inHand(s, "Aura"), "arena");
+    const next = endTurn(s);
+    expect(next.zones.arena.map((i) => i.card.name)).toEqual(["Aura"]);
+    expect(next.zones.graveyard.map((i) => i.card.name)).toEqual(["Hit"]);
+    expect(() => checkInvariants(next)).not.toThrow();
+  });
+
   it("can put a card from hand in an empty arsenal first", () => {
     const s = withHand(card("Keep"));
     const next = endTurn(s, { arsenal: inHand(s, "Keep") });
