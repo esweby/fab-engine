@@ -102,6 +102,7 @@ interface CardRules {
   usurp?: boolean;
   triggers?: Trigger[];
   playableFromBanish?: boolean;
+  graveyardToBanish?: boolean;
   weaponAttack?: RulesCard["weaponAttack"];
 }
 

@@ -268,3 +268,37 @@ describe("invariants", () => {
     );
   });
 });
+
+// Engulfing Shadows, Embraforged Gauntlet: "If this would be put into your graveyard from
+// anywhere, instead banish it." (Their facts; drafted 20 Oct 2026 for the maintainer to check.)
+describe("banished instead of the graveyard", () => {
+  const shade = () =>
+    card("Shade", { graveyardToBanish: true, traits: ["blood_debt"] });
+
+  it("goes to the banished zone, face up, whenever it would go to the graveyard", () => {
+    const s = withHand(shade());
+    const next = moveCard(s, inHand(s, "Shade"), "graveyard");
+    expect(next.zones.graveyard).toHaveLength(0);
+    expect(next.zones.banished.map((i) => i.card.name)).toEqual(["Shade"]);
+    expect(next.faceDown).toHaveLength(0);
+  });
+
+  it("is banished when played and resolved, and when the arena clears", () => {
+    const played = withHand(shade());
+    expect(
+      playCard(played, inHand(played, "Shade")).zones.banished.map(
+        (i) => i.card.name,
+      ),
+    ).toEqual(["Shade"]);
+    const attack = withHand(
+      card("Shade attack", {
+        type: "attack_action",
+        graveyardToBanish: true,
+      }),
+    );
+    const ended = endTurn(playCard(attack, inHand(attack, "Shade attack")));
+    expect(ended.zones.banished.map((i) => i.card.name)).toEqual([
+      "Shade attack",
+    ]);
+  });
+});

@@ -34,6 +34,8 @@ export interface RulesCard extends EngineCard {
   triggers?: Trigger[];
   /** "You may play this from your banished zone." */
   playableFromBanish?: boolean;
+  /** "If this would be put into your graveyard from anywhere, instead banish it." */
+  graveyardToBanish?: boolean;
   /** A weapon's attack: its cost, and whether it needs a card played from banish this turn. */
   weaponAttack?: { cost: number; needsPlayedFromBanish?: boolean };
 }
@@ -250,6 +252,8 @@ export function moveCard(
   const from = zoneOf(s, uid);
   if (!from) throw new RulesError(`No card ${uid} in the game.`);
   const moving = s.zones[from].find((i) => i.uid === uid)!;
+  // "If this would be put into your graveyard from anywhere, instead banish it."
+  if (to === "graveyard" && moving.card.graveyardToBanish) to = "banished";
   const zones = {
     ...s.zones,
     [from]: s.zones[from].filter((i) => i.uid !== uid),
