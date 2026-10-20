@@ -385,6 +385,8 @@ export const CARD_RULES: Record<string, CardRules> = {
       "Runaways",
       "Silken Gi",
       "Threadbare Tunic",
+      "Unflinching Foothold",
+      "Vigilant Dodgers",
     ].map((name) => [name, activated("instant", 0, "destroy")]),
   ),
   ...Object.fromEntries(

@@ -78,6 +78,8 @@ const ACCEPTED: [string, number | null][] = [
   ["Tip-Off", 1],
   ["Tip-Off", 2],
   ["Tip-Off", 3],
+  ["Unflinching Foothold", null],
+  ["Vigilant Dodgers", null],
 ];
 
 /** Rejected in the same sitting, so they stay unmodelled. */
