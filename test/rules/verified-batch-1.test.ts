@@ -3,6 +3,7 @@
 // to show the rules do what the drafts said.
 import { describe, expect, it } from "vitest";
 import {
+  applySessionAction,
   cardWithRules,
   playCard,
   setUp,
@@ -133,6 +134,19 @@ describe("the first accepted batch", () => {
     const s = game([card("Otherworldly Sins", { goAgain: true })]);
     const next = playCard(s, inHand(s, "Otherworldly Sins"), keepAll);
     expect(next.tokens.runechant).toBe(1);
+  });
+
+  // The maintainer, 20 Oct 2026: "You have to deal physical damage for Even Bigger Than That".
+  // Damage is noted by hand (combat is out of scope), so that's what it checks.
+  it("plays Even Bigger Than That! only once damage is noted this turn", () => {
+    const s = game([card("Even Bigger Than That!", { type: "instant" })]);
+    expect(() =>
+      playCard(s, inHand(s, "Even Bigger Than That!"), keepAll),
+    ).toThrow("Even Bigger Than That! needs damage dealt this turn.");
+    const dealt = applySessionAction(s, { type: "damage", delta: 3 });
+    expect(() =>
+      playCard(dealt, inHand(dealt, "Even Bigger Than That!"), keepAll),
+    ).not.toThrow();
   });
 
   it("gives the Gloomblades Usurp and play from banish", () => {

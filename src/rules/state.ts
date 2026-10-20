@@ -34,6 +34,11 @@ export interface RulesCard extends EngineCard {
   triggers?: Trigger[];
   /** "You may play this from your banished zone." */
   playableFromBanish?: boolean;
+  /**
+   * "Play this only if you've dealt damage this turn": at least this much damage noted this turn
+   * (combat is out of scope, so damage is noted by hand).
+   */
+  needsDamageThisTurn?: number;
   /** A weapon's attack: its cost, and whether it needs a card played from banish this turn. */
   weaponAttack?: { cost: number; needsPlayedFromBanish?: boolean };
 }

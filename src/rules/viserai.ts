@@ -103,6 +103,7 @@ interface CardRules {
   triggers?: Trigger[];
   playableFromBanish?: boolean;
   weaponAttack?: RulesCard["weaponAttack"];
+  needsDamageThisTurn?: number;
 }
 
 /** Malefic Incantation: the same text at each pitch, with 3, 2 or 1 verse counters. */
@@ -134,8 +135,8 @@ const malefic = (verses: number): CardRules => ({
 /**
  * A sinchant (Runechant of Envy, Gluttony and so on): "When this is destroyed, create a Runechant
  * token. At the beginning of your action phase or when you play an attack action card, destroy
- * this." Destroyed on an attack action card at the maintainer's word (20 Oct 2026); the rest is
- * the printed text, awaiting sign-off. Not modelled: "This counts as a Runechant", and usurping.
+ * this." Signed off by the maintainer, 20 Oct 2026. Not modelled: "This counts as a Runechant",
+ * and usurping.
  */
 const sinchant = (name: string): CardRules => {
   const destroyed = [
@@ -372,12 +373,21 @@ const BY_PITCH: Record<string, Record<number, CardRules>> = {
   // "Play this only if you've dealt {p} damage this turn. Opt 3, then reveal the top card of your
   // deck. If it has {p} greater than the total damage you've dealt this turn, create a Quicken
   // token and draw a card."
-  // Only the Opt is drafted: its facts don't record "play this only if you've dealt damage", the
-  // reveal, Quicken or draw, so the engine lets it be played any time, for Opt alone.
+  // Only the Opt is drafted; the reveal, Quicken and draw aren't. It needs damage noted this turn
+  // ("you have to deal physical damage": the maintainer, 20 Oct 2026).
   "Even Bigger Than That!": {
-    1: { effects: parseEffects([{ op: "opt", amount: 3 }]) },
-    2: { effects: parseEffects([{ op: "opt", amount: 2 }]) },
-    3: { effects: parseEffects([{ op: "opt", amount: 1 }]) },
+    1: {
+      effects: parseEffects([{ op: "opt", amount: 3 }]),
+      needsDamageThisTurn: 1,
+    },
+    2: {
+      effects: parseEffects([{ op: "opt", amount: 2 }]),
+      needsDamageThisTurn: 1,
+    },
+    3: {
+      effects: parseEffects([{ op: "opt", amount: 1 }]),
+      needsDamageThisTurn: 1,
+    },
   },
   // "Create 3 Runechant tokens."
   "Read the Runes": {
