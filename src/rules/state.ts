@@ -51,9 +51,18 @@ export interface RulesCard extends EngineCard {
    * (combat is out of scope, so damage is noted by hand).
    */
   needsDamageThisTurn?: number;
+  /**
+   * What makes it cost less: 1 for each Runechant you control, or a fixed amount when it's played
+   * from your banished zone or you've usurped this turn. A cost never goes below 0.
+   */
+  costReductions?: CostReduction[];
   /** A weapon's attack: its cost, and whether it needs a card played from banish this turn. */
   weaponAttack?: { cost: number; needsPlayedFromBanish?: boolean };
 }
+
+export type CostReduction =
+  | { amount: "perRunechant" }
+  | { amount: number; when: "playedFromBanish" | "usurpedThisTurn" };
 
 export interface RulesInstance {
   uid: string;
