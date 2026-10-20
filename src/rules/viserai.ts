@@ -184,10 +184,18 @@ const BY_PITCH: Record<string, Record<number, CardRules>> = {
   "Malefic Incantation": { 1: malefic(3), 2: malefic(2), 3: malefic(1) },
 };
 
+/** A card's verified rules at a pitch, or undefined when it's unmodelled. */
+export function verifiedRulesFor(
+  name: string,
+  pitch: number | null,
+): CardRules | undefined {
+  return (
+    CARD_RULES[name] ?? (pitch === null ? undefined : BY_PITCH[name]?.[pitch])
+  );
+}
+
 /** A card with its verified rules attached, or as it was (unmodelled) when it has none. */
 export function cardWithRules(card: RulesCard): RulesCard {
-  const rules =
-    CARD_RULES[card.name] ??
-    (card.pitch === null ? undefined : BY_PITCH[card.name]?.[card.pitch]);
+  const rules = verifiedRulesFor(card.name, card.pitch);
   return rules ? { ...card, ...rules } : card;
 }

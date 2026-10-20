@@ -42,6 +42,7 @@ export {
   CARD_RULES,
   cardWithRules,
   RUNECHANT,
+  verifiedRulesFor,
   VISERAI,
 } from "./viserai.ts";
 export {
