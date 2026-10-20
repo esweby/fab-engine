@@ -352,7 +352,7 @@ export function removeTokens(
 }
 
 /** Traits of cards that stay in the arena when the turn ends (signed off, 20 Oct 2026). */
-const PERMANENTS = ["aura", "item", "ally", "landmark"];
+export const PERMANENTS = ["aura", "item", "ally", "landmark"];
 
 /** The start of the end phase, where its triggers (blood debt, the Usurper) happen. */
 export function startEndPhase(s: RulesState): RulesState {

@@ -10,6 +10,7 @@ import {
   removeTokens,
   startEndPhase,
   moveCard,
+  PERMANENTS,
   RulesError,
   withEvents,
   zoneOf,
@@ -102,8 +103,9 @@ export function playCard(
       type: "usurped",
       uid,
     });
-  // Attacks wait in the arena; auras stay there until destroyed; other actions resolve.
-  const stays = attack || card.traits.includes("aura");
+  // Attacks wait in the arena; permanents (auras, items) stay there until destroyed; other
+  // actions resolve.
+  const stays = attack || PERMANENTS.some((t) => card.traits.includes(t));
   const moved = moveCard(
     {
       ...paid,

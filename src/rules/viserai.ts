@@ -109,6 +109,20 @@ interface CardRules {
   costReductions?: RulesCard["costReductions"];
 }
 
+/**
+ * A card whose only modelled rule is its activated ability. Playing it (a potion or an amulet)
+ * does nothing more than put it in the arena.
+ */
+const activated = (
+  speed: "instant" | "action",
+  cost: number,
+  pay: NonNullable<RulesCard["activate"]>["pay"],
+  effects: Effect[] = [],
+): CardRules => ({
+  effects: [],
+  activate: { speed, cost, pay, effects: parseEffects(effects) },
+});
+
 /** Malefic Incantation: the same text at each pitch, with 3, 2 or 1 verse counters. */
 const malefic = (verses: number): CardRules => ({
   // "Go again. This enters the arena with N verse counters. When it has none, destroy it."
@@ -346,6 +360,95 @@ export const CARD_RULES: Record<string, CardRules> = {
   // Go again Blood Debt"
   // Accepted before its overpower note was added; the bonus is combat, out of scope.
   "Abyssal Force": { effects: parseEffects([]), playableFromBanish: true },
+  // The second batch the maintainer accepted (20 Oct 2026). What most of these abilities do
+  // (prevention, combat, an opponent's cards) is out of scope, so the rules are how each is paid.
+  // "If this would be put into your graveyard from anywhere, instead banish it."
+  "Embraforged Gauntlet": { effects: [], graveyardToBanish: true },
+  "Engulfing Shadows": { effects: [], graveyardToBanish: true },
+  ...Object.fromEntries(
+    [
+      "Amethyst Amulet",
+      "Amulet of Echoes",
+      "Amulet of Ignition",
+      "Amulet of Intervention",
+      "Amulet of Oblation",
+      "Bruised Leather",
+      "Diamond Amulet",
+      "Four Finger Gloves",
+      "Hood of Second Thoughts",
+      "Platinum Amulet",
+      "Potion of Déjà Vu",
+      "Potion of Ironhide",
+      "Potion of Luck",
+      "Potion of Seeing",
+      "Ragamuffin's Hat",
+      "Runaways",
+      "Silken Gi",
+      "Threadbare Tunic",
+    ].map((name) => [name, activated("instant", 0, "destroy")]),
+  ),
+  ...Object.fromEntries(
+    [
+      "Bracers of Belief",
+      "Captain's Coat",
+      "Cracker Jax",
+      "Crazy Brew",
+      "Goliath Gauntlet",
+      "Healing Potion",
+      "Imperial Edict",
+      "Imperial Seal of Command",
+      "Onyx Amulet",
+      "Pearl Amulet",
+      "Potion of Strength",
+      "Pounamu Amulet",
+      "Quick Clicks",
+      "Sapphire Amulet",
+      "Swiftstrike Bracers",
+      "Timesnap Potion",
+    ].map((name) => [name, activated("action", 0, "destroy")]),
+  ),
+  ...Object.fromEntries(
+    [
+      "Fearless Confrontation",
+      "Ripple Away",
+      "Shelter from the Storm",
+      "Tip-Off",
+    ].map((name) => [name, activated("instant", 0, "discard")]),
+  ),
+  // "Instant – Destroy Energy Potion: Gain {r}{r}." ("Gain 2 pitch": the maintainer's note.)
+  "Energy Potion": activated("instant", 0, "destroy", [
+    { op: "gainResources", amount: 2 },
+  ]),
+  "Exude Confidence": activated("instant", 3, "none"),
+  Firebreathing: activated("instant", 1, "none"),
+  "Helio's Mitre": activated("instant", 2, "none"),
+  "Helm of Hindsight": activated("instant", 3, "destroy"),
+  "Sheltered Cove": activated("instant", 3, "destroy"),
+  "Ornate Tessen": activated("instant", 1, "destroy"),
+  "Imperial Warhorn": activated("action", 1, "destroy"),
+  "Mage Master Boots": activated("action", 1, "destroy"),
+  "Myrkhellir Helm": activated("action", 2, "destroy"),
+  "Punching Gloves": activated("action", 2, "destroy"),
+  "Quartermaster's Boots": activated("action", 2, "destroy"),
+  "Time Skippers": activated("action", 3, "destroy"),
+  // "Instant – Destroy this: Opt N"
+  ...Object.fromEntries(
+    ["Clarity Potion", "Opal Amulet", "Talismanic Lens"].map((name) => [
+      name,
+      activated("instant", 0, "destroy", [{ op: "opt", amount: 2 }]),
+    ]),
+  ),
+  ...Object.fromEntries(
+    [
+      "Seeker's Gilet",
+      "Seeker's Hood",
+      "Seeker's Leggings",
+      "Seeker's Mitts",
+    ].map((name) => [
+      name,
+      activated("instant", 1, "destroy", [{ op: "opt", amount: 1 }]),
+    ]),
+  ),
 };
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
