@@ -155,17 +155,43 @@ function candidates(
 }
 
 /**
- * Opt in a scripted run (UNVERIFIED, for the maintainer to check): put on the bottom the first
- * card that isn't Runeblade or Shadow; once every card left is, keep them on top.
+ * Opt in a scripted run (the maintainer, 20 Oct 2026): keep on top the card the next step can use
+ * best, putting the cards above it on the bottom one at a time. Best first: a card of the pitch
+ * the card wants (Pull from Beyond's Gate), then anything playable from banish, then Rune Gate and
+ * Usurp cards, then Runeblade and Shadow; ties go to the card nearer the top.
  */
 export function scriptedOpt(
-  looking: { uid: string; card: { traits: string[] } }[],
+  looking: {
+    uid: string;
+    card: {
+      traits: string[];
+      pitch?: number | null;
+      playableFromBanish?: boolean;
+      usurp?: boolean;
+    };
+  }[],
+  prefer: { pitch?: number } = {},
 ): string[] {
-  const off = looking.find(
-    (i) =>
-      !i.card.traits.includes("runeblade") && !i.card.traits.includes("shadow"),
-  );
-  return off ? [off.uid] : [];
+  const score = ({ card }: (typeof looking)[number]) => {
+    const has = (t: string) => card.traits.includes(t);
+    const kind =
+      card.playableFromBanish || has("playable_from_banish")
+        ? 3
+        : card.usurp || has("rune_gate") || has("usurp")
+          ? 2
+          : has("runeblade") || has("shadow")
+            ? 1
+            : 0;
+    return (
+      (prefer.pitch !== undefined && card.pitch === prefer.pitch ? 10 : 0) +
+      kind
+    );
+  };
+  let best = 0;
+  looking.forEach((i, n) => {
+    if (score(i) > score(looking[best]!)) best = n;
+  });
+  return best === 0 ? [] : [looking[0]!.uid];
 }
 
 /** The scripted policy's answers to the rules' choices. */
@@ -179,6 +205,7 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
     if (request.prompt.startsWith("Opt"))
       return scriptedOpt(
         request.options.map((uid) => s.zones.deck.find((i) => i.uid === uid)!),
+        request.prefer,
       );
     const options = request.options.map((uid) =>
       [...s.zones.hand, ...s.zones.graveyard, ...s.zones.deck].find(

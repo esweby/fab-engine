@@ -322,7 +322,7 @@ export function removeTokens(
   );
 }
 
-/** Traits of cards that stay in the arena when the turn ends (UNVERIFIED). */
+/** Traits of cards that stay in the arena when the turn ends (signed off, 20 Oct 2026). */
 const PERMANENTS = ["aura", "item", "ally", "landmark"];
 
 /** The start of the end phase, where its triggers (blood debt, the Usurper) happen. */
@@ -353,7 +353,7 @@ export function finishEndPhase(
   for (const pitched of [...next.zones.pitch])
     next = moveCard(next, pitched.uid, "deck", { position: "bottom" });
   // The arena clears to the graveyard; permanents (auras, items, allies, landmarks) stay.
-  // UNVERIFIED (the maintainer, 20 Oct 2026).
+  // Signed off by the maintainer, 20 Oct 2026.
   for (const played of [...next.zones.arena])
     if (!played.card.traits.some((t) => PERMANENTS.includes(t)))
       next = moveCard(next, played.uid, "graveyard");

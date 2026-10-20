@@ -259,15 +259,49 @@ describe("the scripted policy", () => {
   });
 });
 
-// UNVERIFIED, for the maintainer to check: scripted runs can't ask, so Opt follows a fixed rule.
+// The maintainer, 20 Oct 2026: scripted runs can't ask, so Opt keeps on top the card the next
+// step can use best, putting the cards above it on the bottom one at a time. Best first: a card
+// of the pitch the card wants (Pull from Beyond blue wants a blue card, for its Gate), then
+// anything playable from banish, then Rune Gate and Usurp cards, then Runeblade and Shadow.
 describe("the scripted Opt rule", () => {
-  it("puts on the bottom the first card that isn't Runeblade or Shadow, and keeps the rest", () => {
+  const c = (uid: string, traits: string[], pitch = 1) => ({
+    uid,
+    card: { traits, pitch },
+  });
+
+  it("brings the best card to the top by putting the ones above it on the bottom", () => {
     const top = [
-      { uid: "a", card: { traits: ["runeblade"] } },
-      { uid: "b", card: { traits: ["generic"] } },
-      { uid: "c", card: { traits: ["shadow"] } },
+      c("plain", ["generic"]),
+      c("rb", ["runeblade"]),
+      c("gate", ["rune_gate"]),
+      c("banish", ["playable_from_banish"]),
     ];
-    expect(scriptedOpt(top)).toEqual(["b"]);
-    expect(scriptedOpt([top[0]!, top[2]!])).toEqual([]);
+    expect(scriptedOpt(top)).toEqual(["plain"]);
+    expect(scriptedOpt(top.slice(1))).toEqual(["rb"]);
+    expect(scriptedOpt(top.slice(3))).toEqual([]);
+  });
+
+  it("ranks Usurp with Rune Gate, above Runeblade and Shadow", () => {
+    expect(scriptedOpt([c("sh", ["shadow"]), c("usurp", ["usurp"])])).toEqual([
+      "sh",
+    ]);
+    expect(
+      scriptedOpt([c("gate", ["rune_gate"]), c("usurp", ["usurp"])]),
+    ).toEqual([]);
+  });
+
+  it("puts the pitch the card wants first, playable from banish before the rest of that pitch", () => {
+    const top = [
+      c("red banish", ["playable_from_banish"], 1),
+      c("blue", ["generic"], 3),
+      c("blue banish", ["playable_from_banish"], 3),
+    ];
+    expect(scriptedOpt(top, { pitch: 3 })).toEqual(["red banish"]);
+    expect(scriptedOpt(top.slice(1), { pitch: 3 })).toEqual(["blue"]);
+    expect(scriptedOpt(top.slice(2), { pitch: 3 })).toEqual([]);
+  });
+
+  it("keeps the order when nothing is better than the top card", () => {
+    expect(scriptedOpt([c("a", ["generic"]), c("b", ["generic"])])).toEqual([]);
   });
 });

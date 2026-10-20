@@ -47,8 +47,11 @@ export type Effect =
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
   | { op: "gainActionPoint" }
-  /** Opt: look at the top cards of the deck and put any of them on the bottom. */
-  | { op: "opt"; amount: number }
+  /**
+   * Opt: look at the top cards of the deck and put any of them on the bottom. keepPitch: the
+   * pitch the card's next step wants on top (Pull from Beyond's Gate).
+   */
+  | { op: "opt"; amount: number; keepPitch?: number }
   /** Viserai: turn the hero card to its other side. */
   | { op: "traverse" }
   /** Destroy every token of a kind, dealing arcane damage for each (the Runechant rule). */
@@ -111,7 +114,11 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("removeToken"), token: name, amount }),
     z.strictObject({ op: z.literal("gainResources"), amount }),
     z.strictObject({ op: z.literal("gainActionPoint") }),
-    z.strictObject({ op: z.literal("opt"), amount }),
+    z.strictObject({
+      op: z.literal("opt"),
+      amount,
+      keepPitch: z.number().int().min(1).max(3).optional(),
+    }),
     z.strictObject({ op: z.literal("traverse") }),
     z.strictObject({
       op: z.literal("destroyAllTokens"),
@@ -193,6 +200,8 @@ export interface ChoiceRequest {
   optional: boolean;
   /** The trigger asking, for a confirm (e.g. "viserai-usurper-traverse"). */
   source?: string;
+  /** What the card would rather have, for a policy that can't ask (Opt: a pitch on top). */
+  prefer?: { pitch?: number };
 }
 export type Choose = (request: ChoiceRequest) => string[];
 
@@ -330,6 +339,7 @@ export function runEffects(
             options: looking,
             count: 1,
             optional: true,
+            ...(e.keepPitch ? { prefer: { pitch: e.keepPitch } } : {}),
           };
           const chosen = choose(request);
           checkChoice(request, chosen);

@@ -233,6 +233,16 @@ describe("opt", () => {
     expect(next.zones.banished.map((i) => i.card.name)).toEqual(["C"]);
   });
 
+  it("tells the chooser which pitch the card wants on top", () => {
+    const s = withTop();
+    const asked: (number | undefined)[] = [];
+    runEffects(s, [{ op: "opt", amount: 2, keepPitch: 3 }], (request) => {
+      asked.push(request.prefer?.pitch);
+      return [];
+    });
+    expect(asked).toEqual([3]);
+  });
+
   it("looks at no more cards than the deck has", () => {
     let s = withTop();
     s = { ...s, zones: { ...s.zones, deck: s.zones.deck.slice(0, 2) } };
