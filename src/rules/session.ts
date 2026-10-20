@@ -51,6 +51,8 @@ export type SessionAction =
     }
   | { type: "token"; token: string; delta: number }
   | { type: "resources"; delta: number }
+  /** An action point given or taken by hand, e.g. a go again the engine doesn't model. */
+  | { type: "actionPoints"; delta: number }
   | { type: "counter"; uid: string; delta: number }
   /** Mark a weapon or piece of equipment used this turn, or unused again. */
   | { type: "use"; uid: string }
@@ -119,6 +121,11 @@ export function applySessionAction(
       return manual(
         { ...s, resources: Math.max(0, s.resources + action.delta) },
         "resources",
+      );
+    case "actionPoints":
+      return manual(
+        { ...s, actionPoints: Math.max(0, s.actionPoints + action.delta) },
+        "actionPoints",
       );
     case "counter":
       return manual(

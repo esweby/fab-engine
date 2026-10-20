@@ -123,6 +123,20 @@ describe("sandbox actions", () => {
     expect(next.zones.banished).toHaveLength(0);
   });
 
+  // The maintainer, 20 Oct 2026: when the engine misses a go again, give it by hand.
+  it("change action points by hand, never below 0", () => {
+    const s = start();
+    const more = applySessionAction(s, { type: "actionPoints", delta: 1 });
+    expect(more.actionPoints).toBe(s.actionPoints + 1);
+    expect(more.events.at(-1)).toEqual({
+      type: "manual",
+      action: "actionPoints",
+    });
+    expect(
+      applySessionAction(s, { type: "actionPoints", delta: -5 }).actionPoints,
+    ).toBe(0);
+  });
+
   it("change resources, counters, life and damage, traverse, draw and shuffle", () => {
     let s = start();
     s = applySessionAction(s, { type: "resources", delta: 2 });
