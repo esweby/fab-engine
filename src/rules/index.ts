@@ -48,6 +48,7 @@ export {
 export {
   parseScript,
   runScript,
+  scriptedOpt,
   type Script,
   type ScriptRun,
   type ScriptStep,

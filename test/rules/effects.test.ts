@@ -178,3 +178,69 @@ describe("playing a card runs its effects", () => {
     expect(() => pitchCard(s, uidOf(s, "Unknown"))).not.toThrow();
   });
 });
+
+// Opt (the maintainer, 20 Oct 2026: "very important" for Blood Tribute and the like): look at the
+// top cards of the deck and put any of them on the bottom; the rest stay on top. The player is
+// asked one card at a time, and choosing none keeps the rest. UNVERIFIED: reordering the cards
+// kept on top isn't modelled yet.
+describe("opt", () => {
+  const named = (s: RulesState, name: string) =>
+    s.zones.deck.find((i) => i.card.name === name)!.uid;
+  const withTop = () =>
+    setUp({
+      deck: [
+        ...["H1", "H2", "H3", "H4", "A", "B", "C", "D"].map((n) => card(n)),
+        ...Array.from({ length: 10 }, () => card("Filler")),
+      ],
+      seed: 1,
+      order: "asGiven",
+    });
+
+  it("is a valid effect", () => {
+    expect(() => parseEffects([{ op: "opt", amount: 3 }])).not.toThrow();
+  });
+
+  it("puts the chosen cards on the bottom, one at a time, the rest staying on top in order", () => {
+    const s = withTop();
+    const asked: string[][] = [];
+    const picks = [[named(s, "B")], []];
+    const next = runEffects(s, [{ op: "opt", amount: 3 }], (request) => {
+      asked.push(request.options);
+      return picks[asked.length - 1]!;
+    });
+    expect(asked[0]).toEqual(["A", "B", "C"].map((n) => named(s, n)));
+    expect(asked[1]).toEqual(["A", "C"].map((n) => named(s, n)));
+    expect(next.zones.deck.slice(0, 3).map((i) => i.card.name)).toEqual([
+      "A",
+      "C",
+      "D",
+    ]);
+    expect(next.zones.deck.at(-1)!.card.name).toBe("B");
+  });
+
+  it("then banishes the card it left on top, as Blood Tribute does", () => {
+    const s = withTop();
+    const picks = [[named(s, "A")], [named(s, "B")], []];
+    let n = 0;
+    const next = runEffects(
+      s,
+      [
+        { op: "opt", amount: 3 },
+        { op: "banish", from: "deckTop", amount: 1 },
+      ],
+      () => picks[n++]!,
+    );
+    expect(next.zones.banished.map((i) => i.card.name)).toEqual(["C"]);
+  });
+
+  it("looks at no more cards than the deck has", () => {
+    let s = withTop();
+    s = { ...s, zones: { ...s.zones, deck: s.zones.deck.slice(0, 2) } };
+    const asked: string[][] = [];
+    runEffects(s, [{ op: "opt", amount: 3 }], (request) => {
+      asked.push(request.options);
+      return [];
+    });
+    expect(asked[0]).toHaveLength(2);
+  });
+});

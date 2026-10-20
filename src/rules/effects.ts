@@ -47,6 +47,8 @@ export type Effect =
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
   | { op: "gainActionPoint" }
+  /** Opt: look at the top cards of the deck and put any of them on the bottom. */
+  | { op: "opt"; amount: number }
   /** Viserai: turn the hero card to its other side. */
   | { op: "traverse" }
   /** Destroy every token of a kind, dealing arcane damage for each (the Runechant rule). */
@@ -109,6 +111,7 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("removeToken"), token: name, amount }),
     z.strictObject({ op: z.literal("gainResources"), amount }),
     z.strictObject({ op: z.literal("gainActionPoint") }),
+    z.strictObject({ op: z.literal("opt"), amount }),
     z.strictObject({ op: z.literal("traverse") }),
     z.strictObject({
       op: z.literal("destroyAllTokens"),
@@ -314,6 +317,26 @@ export function runEffects(
         for (const uid of chosen)
           s = moveCard(s, uid, "banished", { faceDown: e.faceDown });
         if (e.storeAs) bindings.set(e.storeAs, chosen);
+        break;
+      }
+      case "opt": {
+        // One card at a time to the bottom; choosing none keeps the rest on top, in order.
+        // UNVERIFIED: reordering the cards kept on top isn't modelled yet.
+        let looking = s.zones.deck.slice(0, e.amount).map((i) => i.uid);
+        while (looking.length > 0) {
+          const request: ChoiceRequest = {
+            kind: "cards",
+            prompt: `Opt ${e.amount}: put a card on the bottom of your deck`,
+            options: looking,
+            count: 1,
+            optional: true,
+          };
+          const chosen = choose(request);
+          checkChoice(request, chosen);
+          if (chosen.length === 0) break;
+          s = moveCard(s, chosen[0]!, "deck", { position: "bottom" });
+          looking = looking.filter((uid) => uid !== chosen[0]);
+        }
         break;
       }
       case "createToken":

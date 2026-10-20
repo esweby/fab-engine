@@ -12,6 +12,7 @@ import {
   RulesError,
   RUNECHANT,
   runScript,
+  scriptedOpt,
   VISERAI,
   type RulesCard,
   type Script,
@@ -255,5 +256,18 @@ describe("the scripted policy", () => {
     );
     expect(run.failure).toMatch(/More than 20 triggers/);
     expect(run.trace.length).toBeGreaterThan(20);
+  });
+});
+
+// UNVERIFIED, for the maintainer to check: scripted runs can't ask, so Opt follows a fixed rule.
+describe("the scripted Opt rule", () => {
+  it("puts on the bottom the first card that isn't Runeblade or Shadow, and keeps the rest", () => {
+    const top = [
+      { uid: "a", card: { traits: ["runeblade"] } },
+      { uid: "b", card: { traits: ["generic"] } },
+      { uid: "c", card: { traits: ["shadow"] } },
+    ];
+    expect(scriptedOpt(top)).toEqual(["b"]);
+    expect(scriptedOpt([top[0]!, top[2]!])).toEqual([]);
   });
 });

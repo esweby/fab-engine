@@ -154,6 +154,20 @@ function candidates(
     .map(({ i }) => i.uid);
 }
 
+/**
+ * Opt in a scripted run (UNVERIFIED, for the maintainer to check): put on the bottom the first
+ * card that isn't Runeblade or Shadow; once every card left is, keep them on top.
+ */
+export function scriptedOpt(
+  looking: { uid: string; card: { traits: string[] } }[],
+): string[] {
+  const off = looking.find(
+    (i) =>
+      !i.card.traits.includes("runeblade") && !i.card.traits.includes("shadow"),
+  );
+  return off ? [off.uid] : [];
+}
+
 /** The scripted policy's answers to the rules' choices. */
 function scriptedChoices(script: Script, current: () => RulesState): Choose {
   return (request: ChoiceRequest) => {
@@ -162,6 +176,10 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
         ? []
         : ["yes"];
     const s = current();
+    if (request.prompt.startsWith("Opt"))
+      return scriptedOpt(
+        request.options.map((uid) => s.zones.deck.find((i) => i.uid === uid)!),
+      );
     const options = request.options.map((uid) =>
       [...s.zones.hand, ...s.zones.graveyard, ...s.zones.deck].find(
         (i) => i.uid === uid,

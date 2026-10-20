@@ -70,6 +70,10 @@ function phrase(e: Effect): string {
       return `gain ${e.amount} resource${e.amount === 1 ? "" : "s"}`;
     case "gainActionPoint":
       return "gain an action point (go again)";
+    case "opt":
+      return e.amount === 1
+        ? "opt 1 (look at the top card of your deck and you may put it on the bottom)"
+        : `opt ${e.amount} (look at the top ${e.amount} cards of your deck and put any on the bottom)`;
     case "traverse":
       return "traverse";
     case "destroyAllTokens":
