@@ -13,8 +13,10 @@ import {
   RulesError,
   withEvents,
   zoneOf,
+  type RulesCard,
   type RulesState,
 } from "./state.ts";
+import type { Zone } from "../game.ts";
 
 const NEEDS_ACTION_POINT = new Set(["action", "attack_action"]);
 const PLAYABLE_IN_ACTION_PHASE = new Set([
@@ -221,4 +223,59 @@ export function attackWithWeapon(
     resolved.events.length,
     choose,
   );
+}
+
+/** Where a card must be to activate it, by how it pays. */
+const ACTIVATE_FROM: Record<NonNullable<RulesCard["activate"]>["pay"], Zone[]> =
+  {
+    banish_from_hand: ["hand"],
+    discard: ["hand"],
+    destroy: ["arena", "equipment", "weapons"],
+    banish: ["arena", "equipment", "weapons"],
+    none: ["arena", "equipment", "weapons"],
+  };
+
+/**
+ * Activate a card's ability ("Instant - {r}, destroy this: …"): an action point at action speed,
+ * its resource cost, then the card pays as its text says, then the ability resolves (the
+ * maintainer asked for an activate action, 20 Oct 2026).
+ */
+export function activateCard(
+  s: RulesState,
+  uid: string,
+  choose: Choose = noChoices,
+): RulesState {
+  const { card } = instance(s, uid);
+  const ability = card.activate;
+  if (!ability)
+    throw new RulesError(`${card.name} has no ability to activate.`);
+  const from = zoneOf(s, uid);
+  if (!from || !ACTIVATE_FROM[ability.pay].includes(from))
+    throw new RulesError(`${card.name} can't be activated from there.`);
+  if (ability.speed === "action") {
+    if (s.phase !== "action")
+      throw new RulesError("Actions are activated in the action phase.");
+    if (s.actionPoints < 1) throw new RulesError("No action point left.");
+  }
+  if (ability.cost > s.resources)
+    throw new RulesError(
+      `Activating ${card.name} costs ${ability.cost}; ${s.resources} available.`,
+    );
+  let next: RulesState = {
+    ...s,
+    resources: s.resources - ability.cost,
+    actionPoints: s.actionPoints - (ability.speed === "action" ? 1 : 0),
+  };
+  if (ability.pay === "destroy" || ability.pay === "discard")
+    next = moveCard(next, uid, "graveyard");
+  else if (ability.pay === "banish" || ability.pay === "banish_from_hand")
+    next = moveCard(next, uid, "banished");
+  next = withEvents(next, { type: "activated", uid });
+  const resolved = runEffects(
+    next,
+    ability.effects,
+    choose,
+    new Map([["self", [uid]]]),
+  );
+  return resolveTriggers(resolved, s.events.length, choose);
 }

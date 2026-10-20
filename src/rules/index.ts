@@ -25,6 +25,7 @@ export {
   type Effect,
 } from "./effects.ts";
 export {
+  activateCard,
   activateGate,
   attackWithWeapon,
   endTurn,

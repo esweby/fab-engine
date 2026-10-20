@@ -71,6 +71,7 @@ const EVENT_TYPES = [
   "endPhaseStarted",
   "playedFromBanish",
   "gateActivated",
+  "activated",
   "countersChanged",
   "manual",
   "damageNoted",

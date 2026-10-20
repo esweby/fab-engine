@@ -103,6 +103,7 @@ interface CardRules {
   triggers?: Trigger[];
   playableFromBanish?: boolean;
   graveyardToBanish?: boolean;
+  activate?: RulesCard["activate"];
   weaponAttack?: RulesCard["weaponAttack"];
   needsDamageThisTurn?: number;
 }

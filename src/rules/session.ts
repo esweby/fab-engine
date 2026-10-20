@@ -10,6 +10,7 @@ import { shuffle } from "../index.ts";
 import type { Zone } from "../game.ts";
 import type { ChoiceRequest, Choose } from "./effects.ts";
 import {
+  activateCard,
   activateGate,
   attackWithWeapon,
   endTurn,
@@ -36,6 +37,8 @@ export type SessionAction =
   | ({ type: "play"; uid: string } & Answers)
   | ({ type: "pitch"; uid: string } & Answers)
   | ({ type: "activateGate"; target: string } & Answers)
+  /** A card's activated ability ("Instant - {r}, destroy this: …"). */
+  | ({ type: "activate"; uid: string } & Answers)
   | ({ type: "weaponAttack"; uid: string } & Answers)
   | ({ type: "endTurn"; arsenal?: string } & Answers)
   // By hand
@@ -90,6 +93,8 @@ export function applySessionAction(
       return pitchCard(s, action.uid, answering(action.answers));
     case "activateGate":
       return activateGate(s, action.target, answering(action.answers));
+    case "activate":
+      return activateCard(s, action.uid, answering(action.answers));
     case "weaponAttack":
       return attackWithWeapon(s, action.uid, answering(action.answers));
     case "endTurn":

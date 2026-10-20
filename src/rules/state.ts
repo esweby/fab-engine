@@ -37,6 +37,16 @@ export interface RulesCard extends EngineCard {
   /** "If this would be put into your graveyard from anywhere, instead banish it." */
   graveyardToBanish?: boolean;
   /**
+   * An activated ability: "Instant - {r}, destroy this: …". Its speed, resource cost, how the card
+   * pays (destroyed, banished, banished from hand, discarded, or not at all) and what it does.
+   */
+  activate?: {
+    speed: "instant" | "action";
+    cost: number;
+    pay: "destroy" | "banish" | "banish_from_hand" | "discard" | "none";
+    effects: Effect[];
+  };
+  /**
    * "Play this only if you've dealt damage this turn": at least this much damage noted this turn
    * (combat is out of scope, so damage is noted by hand).
    */
@@ -71,6 +81,7 @@ export type RulesEvent =
   | { type: "endPhaseStarted"; turn: number }
   | { type: "playedFromBanish"; uid: string }
   | { type: "gateActivated"; target: string }
+  | { type: "activated"; uid: string }
   | { type: "countersChanged"; uid: string; delta: number }
   /** A goldfish change made by hand: no rules applied, nothing set off. */
   | { type: "manual"; action: string }
