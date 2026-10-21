@@ -23,6 +23,13 @@ export interface TurnRecord {
   onUsurperAtEnd: boolean;
   /** Life lost by the end of this turn. */
   lifeLost: number;
+  /** Arcane damage dealt this turn (Runechants). */
+  arcane: number;
+  /**
+   * Damage threatened this turn: each attack's printed power, plus 2 for each usurp. A goldfish
+   * count, unblocked; power bonuses that are combat aren't counted (docs/engine-calibration.md).
+   */
+  threatened: number;
   queries: Record<string, boolean>;
 }
 
@@ -32,6 +39,8 @@ export interface RunSummary {
   failure?: string;
   turns: TurnRecord[];
   gateByTurn: boolean[];
+  /** The turn Viserai first traversed to the Usurper, or null if never. */
+  firstTraverseTurn: number | null;
 }
 
 export interface TurnReport {
@@ -101,6 +110,8 @@ function summarise(
   let runechants = 0;
   let gate = false;
   let lifeLost = 0;
+  let arcane = 0;
+  let threatened = 0;
   const any = (ids: Set<string>, sel: Selector) =>
     [...ids].some((id) => {
       const c = cards.get(id);
@@ -112,6 +123,9 @@ function summarise(
     if (e.type === "tokensCreated" && e.token === "gate") gate = true;
     if (e.type === "traversed") side = e.to;
     if (e.type === "lifeLost") lifeLost += e.amount;
+    if (e.type === "arcaneDamage") arcane += e.amount;
+    if (e.type === "attackPlayed") threatened += cards.get(e.uid)?.power ?? 0;
+    if (e.type === "usurped") threatened += 2;
     if (e.type === "moved") {
       if (e.to === "banished") {
         banished.add(e.uid);
@@ -124,6 +138,8 @@ function summarise(
         gateBy: gate,
         onUsurperAtEnd: side === "usurper",
         lifeLost,
+        arcane,
+        threatened,
         queries: Object.fromEntries(
           queries.map((q) => [
             q.id,
@@ -132,9 +148,21 @@ function summarise(
         ),
       });
       runechants = 0;
+      arcane = 0;
+      threatened = 0;
     }
   }
   return turns;
+}
+
+/** The turn of the first traverse to the Usurper in a trace, or null. */
+function firstTraverse(trace: RulesEvent[]): number | null {
+  let turn = 1;
+  for (const e of trace) {
+    if (e.type === "turnStarted") turn = e.turn;
+    if (e.type === "traversed" && e.to === "usurper") return turn;
+  }
+  return null;
 }
 
 const mean = (xs: number[]) =>
@@ -163,6 +191,7 @@ export function runBatch(
       ...(run.failure ? { failure: run.failure } : {}),
       turns,
       gateByTurn: turns.map((t) => t.gateBy),
+      firstTraverseTurn: run.failure ? null : firstTraverse(run.trace),
     });
   }
   const done = perRun.filter((r) => r.completed);

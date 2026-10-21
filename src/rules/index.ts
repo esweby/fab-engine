@@ -72,6 +72,23 @@ export {
   type TurnReport,
 } from "./batch.ts";
 export {
+  compare,
+  dist,
+  firstTraverseOf,
+  ksDistance,
+  MIN_OBSERVED,
+  MIN_SIMULATED,
+  robustness,
+  simulatedDistributions,
+  type Check as CalibrationCheck,
+  type CompareOptions,
+  type Dist,
+  type ObservedGroup,
+  type SimulatedDistributions,
+  type Threshold,
+  type Verdict,
+} from "./calibration.ts";
+export {
   applySessionAction,
   NeedsChoice,
   replaySession,

@@ -24,6 +24,11 @@ export interface RulesCard extends EngineCard {
   /** Natural go again (the keyword); conditional go again comes from effects. */
   goAgain: boolean;
   /**
+   * Printed power, for threatened damage only (docs/engine-calibration.md): combat stays out of
+   * scope, so nothing is blocked. Missing or null counts as 0.
+   */
+  power?: number | null;
+  /**
    * What playing it does, verified by a player. Missing = not modelled yet: the engine can
    * pitch, hold, arsenal or banish it, but not play it (docs/rules-engine.md).
    */
