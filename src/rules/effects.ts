@@ -19,6 +19,8 @@ export type Check =
   | { has: string; target: string }
   | { createdThisTurn: string; atLeast: number }
   | { activatedThisTurn: string; atLeast: number }
+  | { damageDealtThisTurn: number }
+  | { latestAttack: string }
   /** The bound card is of this type and/or has this trait. */
   | { cardIs: { type?: string; trait?: string }; target: string }
   /** The bound card has at least this many counters. */
@@ -54,6 +56,11 @@ export type Effect =
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
   | { op: "gainActionPoint" }
+  | { op: "grantGoAgain"; target: string }
+  | {
+      op: "grantGoAgain";
+      firstPlayedThisTurn: { type?: string; trait?: string };
+    }
   /**
    * Opt: look at the top cards of the deck and put any of them on the bottom. keepPitch: the
    * pitch the card's next step wants on top (Pull from Beyond's Gate).
@@ -84,6 +91,8 @@ export const checkSchema: z.ZodType<Check> = z.lazy(() =>
       atLeast: z.number().int().min(0),
     }),
     z.strictObject({ tokens: name, atLeast: z.number().int().min(0) }),
+    z.strictObject({ damageDealtThisTurn: z.number().int().min(1) }),
+    z.strictObject({ latestAttack: name }),
     z.strictObject({
       activatedThisTurn: name,
       atLeast: z.number().int().min(0),
@@ -130,6 +139,14 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("removeToken"), token: name, amount }),
     z.strictObject({ op: z.literal("gainResources"), amount }),
     z.strictObject({ op: z.literal("gainActionPoint") }),
+    z.strictObject({ op: z.literal("grantGoAgain"), target: name }),
+    z.strictObject({
+      op: z.literal("grantGoAgain"),
+      firstPlayedThisTurn: z.strictObject({
+        type: name.optional(),
+        trait: name.optional(),
+      }),
+    }),
     z.strictObject({
       op: z.literal("opt"),
       amount,
@@ -156,6 +173,7 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
 );
 
 function bindingsUsed(check: Check): string[] {
+  if ("latestAttack" in check) return [check.latestAttack];
   if ("target" in check) return [check.target];
   if ("all" in check) return check.all.flatMap(bindingsUsed);
   if ("any" in check) return check.any.flatMap(bindingsUsed);
@@ -175,6 +193,8 @@ function checkBindings(effects: Effect[], bound: Set<string>) {
       checkBindings(e.else ?? [], here);
     }
     if (e.op === "banish" && e.storeAs) here.add(e.storeAs);
+    if (e.op === "grantGoAgain" && "target" in e && !here.has(e.target))
+      throw new RulesError(`Binding "${e.target}" is used before it is set.`);
   }
 }
 
@@ -245,6 +265,33 @@ export function holds(
   check: Check,
   bindings: Map<string, string[]>,
 ): boolean {
+  if ("damageDealtThisTurn" in check) {
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    const damage = s.events
+      .slice(turnStart + 1)
+      .reduce(
+        (total, event) =>
+          event.type === "damageNoted" || event.type === "arcaneDamage"
+            ? total + event.amount
+            : total,
+        0,
+      );
+    return damage >= check.damageDealtThisTurn;
+  }
+  if ("latestAttack" in check) {
+    const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+    const latest = s.events
+      .slice(turnStart + 1)
+      .findLast(
+        (event) =>
+          event.type === "attackPlayed" || event.type === "attackNoted",
+      );
+    return (
+      !!latest &&
+      "uid" in latest &&
+      (bindings.get(check.latestAttack) ?? []).includes(latest.uid)
+    );
+  }
   if ("has" in check)
     return (bindings.get(check.target) ?? []).some((uid) =>
       instance(s, uid).card.traits.includes(check.has),
@@ -297,7 +344,7 @@ export function holds(
     });
     if (!first || first.type !== "played") return false;
     const inArena = s.zones.arena.find((i) => i.uid === first.uid);
-    return !!inArena && !inArena.card.goAgain;
+    return !!inArena && !hasGoAgain(s, inArena.uid);
   }
   if ("triggeredThisTurn" in check) {
     const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
@@ -317,6 +364,16 @@ const BANISH_FROM = {
   hand: "Banish a card from hand",
   graveyard: "Banish a card from the graveyard",
 } as const;
+
+function hasGoAgain(state: RulesState, uid: string): boolean {
+  if (instance(state, uid).card.goAgain) return true;
+  const played = state.events.findLastIndex(
+    (event) => event.type === "played" && event.uid === uid,
+  );
+  return state.events
+    .slice(played + 1)
+    .some((event) => event.type === "goAgainGranted" && event.uid === uid);
+}
 
 /** Runs effects in order. The state given is never changed. */
 export function runEffects(
@@ -407,6 +464,32 @@ export function runEffects(
           { type: "actionPointGained" },
         );
         break;
+      case "grantGoAgain": {
+        let target: string | undefined;
+        if ("target" in e) target = bindings.get(e.target)?.[0];
+        else {
+          const turnStart = s.events.findLastIndex(
+            (event) => event.type === "turnStarted",
+          );
+          const filter = e.firstPlayedThisTurn;
+          const first = s.events.slice(turnStart + 1).find((event) => {
+            if (event.type !== "played") return false;
+            const card = instance(s, event.uid).card;
+            return (
+              (filter.type === undefined || card.type === filter.type) &&
+              (filter.trait === undefined || card.traits.includes(filter.trait))
+            );
+          });
+          if (first && first.type === "played") target = first.uid;
+        }
+        if (target && !hasGoAgain(s, target))
+          s = withEvents(
+            { ...s, actionPoints: s.actionPoints + 1 },
+            { type: "goAgainGranted", uid: target },
+            { type: "actionPointGained" },
+          );
+        break;
+      }
       case "traverse": {
         const to = s.side === "forsaken" ? "usurper" : "forsaken";
         s = withEvents({ ...s, side: to }, { type: "traversed", to });

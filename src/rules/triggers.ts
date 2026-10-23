@@ -60,6 +60,7 @@ const EVENT_TYPES = [
   "tokensRemoved",
   "resourcesGained",
   "actionPointGained",
+  "goAgainGranted",
   "triggered",
   "turnEnded",
   "turnStarted",

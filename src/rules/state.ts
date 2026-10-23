@@ -86,6 +86,7 @@ export type RulesEvent =
   | { type: "tokensRemoved"; token: string; amount: number }
   | { type: "resourcesGained"; amount: number }
   | { type: "actionPointGained" }
+  | { type: "goAgainGranted"; uid: string }
   | { type: "triggered"; trigger: string }
   | { type: "traversed"; to: HeroSide }
   | { type: "usurped"; uid: string }

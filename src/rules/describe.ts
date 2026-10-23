@@ -26,6 +26,11 @@ const tokens = (token: string, n: number) => {
 };
 
 function check(c: Check): string {
+  if ("damageDealtThisTurn" in c)
+    return c.damageDealtThisTurn === 1
+      ? "you've dealt damage to the defending hero this turn"
+      : `you've dealt at least ${c.damageDealtThisTurn} damage to the defending hero this turn`;
+  if ("latestAttack" in c) return "this is the current attack";
   if ("has" in c) return `that card is ${TRAITS[c.has] ?? c.has}`;
   if ("createdThisTurn" in c)
     return `you've made ${tokens(c.createdThisTurn, c.atLeast)} or more this turn`;
@@ -74,6 +79,8 @@ function phrase(e: Effect): string {
       return `gain ${e.amount} resource${e.amount === 1 ? "" : "s"}`;
     case "gainActionPoint":
       return "gain an action point (go again)";
+    case "grantGoAgain":
+      return "give this attack go again (only one action point, even if it already has go again)";
     case "opt":
       return e.amount === 1
         ? "opt 1 (look at the top card of your deck and you may put it on the bottom)"

@@ -1,7 +1,7 @@
 // Goldfish on the rules engine (docs/rules-engine.md, step 8). Rules actions resolve effects and
 // triggers through the engine; sandbox actions are applied by hand, marked manual, and set
-// nothing off, so the player can play unmodelled cards and test lines the engine doesn't
-// support. A manual change may leave a state the rules wouldn't allow: that's accepted here and
+// nothing off, except noting damage and traversing. The player can play unmodelled cards and
+// test lines the engine doesn't support. A manual change may leave a state the rules wouldn't allow: that's accepted here and
 // never possible in a scenario run.
 //
 // When the engine needs a choice, the action stops with NeedsChoice. The interface asks, then
@@ -168,12 +168,16 @@ export function applySessionAction(
     case "life":
       return manual({ ...s, lifeLost: s.lifeLost - action.delta }, "life");
     case "damage":
-      return manual(
-        withEvents(s, { type: "damageNoted", amount: action.delta }),
-        "damage",
+      return resolveTriggers(
+        manual(
+          withEvents(s, { type: "damageNoted", amount: action.delta }),
+          "damage",
+        ),
+        s.events.length,
+        noChoices,
       );
     case "traverse": {
-      // The one manual action that sets something off: Viserai's abilities answer to the side
+      // Viserai's abilities answer to the side
       // he's on, however he got there (the maintainer, 20 Oct 2026: traversing by hand to the
       // Usurper gives the turn's first blood debt attack go again).
       const to = s.side === "forsaken" ? "usurper" : "forsaken";
