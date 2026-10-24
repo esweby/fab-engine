@@ -1,4 +1,4 @@
-// UNVERIFIED drafts for the maintainer's next review pair; no registry entries are added.
+// Registered rules approved by the maintainer on 24 Oct 2026.
 import { describe, expect, it } from "vitest";
 import {
   activateGate,
@@ -16,6 +16,7 @@ import {
   runEffects,
   runScript,
   setUp,
+  verifiedRulesFor,
   type Choose,
   type Effect,
   type RulesCard,
@@ -38,25 +39,19 @@ const filler: RulesCard = {
 };
 const aura = (name = "Runechant of Envy", cost = 0) =>
   cardWithRules({ ...filler, id: name, name, cost, traits: ["aura"] });
-const source: RulesCard = {
+const source: RulesCard = cardWithRules({
   ...filler,
   id: "source",
-  name: "Draft Sinspeaker",
+  name: "Sinspeaker Gloomblade",
+  pitch: 1,
   type: "attack_action",
-  usurp: true,
-  playableFromBanish: true,
-  triggers: [
-    {
-      id: "draft-sinspeaker-search",
-      on: { event: "attacking", self: true },
-      condition: { playedFromBanish: "self" },
-      optional: true,
-      effects: [search],
-    },
-  ],
-};
+  goAgain: false,
+  effects: undefined,
+});
 
 function game(hand: RulesCard[] = [], deck: RulesCard[] = []): RulesState {
+  expect(verifiedRulesFor("Sinspeaker Gloomblade", 1)).toBeDefined();
+  expect(verifiedRulesFor("Embrace Sin", 2)).toBeDefined();
   expect(() => parseEffects([permission, search])).not.toThrow();
   expect(() => parseTriggers(source.triggers)).not.toThrow();
   return setUp({
@@ -78,9 +73,34 @@ const inZone = (
 ) => state.zones[zone].find((instance) => instance.card.name === name)!.uid;
 const banish = (state: RulesState, name: string) =>
   moveCard(state, inZone(state, name), "banished");
-const permit = (state: RulesState) => runEffects(state, [permission], () => []);
+const permit = (state: RulesState) =>
+  runEffects(state, verifiedRulesFor("Embrace Sin", 2)!.effects, () => []);
 
-describe("Embrace Sin's proposed permission", () => {
+describe("Embrace Sin's verified permission", () => {
+  it("plays the registered yellow card for one resource, with go again", () => {
+    const embrace = cardWithRules({
+      ...filler,
+      id: "embrace",
+      name: "Embrace Sin",
+      pitch: 2,
+      cost: 1,
+      effects: undefined,
+    });
+    const initial = banish(game([embrace, aura()]), "Runechant of Envy");
+    const played = playCard(
+      { ...initial, resources: 1 },
+      inZone(initial, embrace.name),
+    );
+    expect(played.resources).toBe(0);
+    expect(played.actionPoints).toBe(1);
+    expect(played.runechantAuraPlaysThisTurn).toBe(1);
+    const next = playCard(
+      played,
+      inZone(played, "Runechant of Envy", "banished"),
+    );
+    expect(next.runechantAuraPlaysThisTurn).toBe(0);
+  });
+
   it("allows one matching aura this turn, paying its normal cost", () => {
     let state = game([
       aura("Runechant of Envy", 1),
@@ -160,7 +180,7 @@ const selecting =
   (request) =>
     request.kind === "confirm" ? ["yes"] : target ? [target] : [];
 
-describe("Sinspeaker's proposed search", () => {
+describe("Sinspeaker's verified search", () => {
   it("puts the selected aura into the arena without playing it, then shuffles", () => {
     const state = prepareSearch();
     const target = inZone(state, "Runechant of Envy", "deck");
@@ -182,7 +202,10 @@ describe("Sinspeaker's proposed search", () => {
     ).toHaveLength(1);
     expect(played.tokens.runechant ?? 0).toBe(0);
     checkInvariants(played);
-    const next = playCard(played, played.zones.hand[0]!.uid);
+    const next = playCard(
+      { ...played, actionPoints: 1 },
+      played.zones.hand[0]!.uid,
+    );
     expect(next.zones.arena.some((instance) => instance.uid === target)).toBe(
       true,
     );
@@ -203,6 +226,7 @@ describe("Sinspeaker's proposed search", () => {
     const next = playCard(
       {
         ...played,
+        actionPoints: 1,
         zones: {
           ...played.zones,
           hand: [attack, ...played.zones.hand.slice(1)],
@@ -239,9 +263,13 @@ describe("Sinspeaker's proposed search", () => {
     );
     const returned = moveCard(played, played.zones.arena[0]!.uid, "hand");
     expect(() =>
-      playCard(returned, inZone(returned, source.name), () => {
-        throw new Error("No search expected");
-      }),
+      playCard(
+        { ...returned, actionPoints: 1 },
+        inZone(returned, source.name),
+        () => {
+          throw new Error("No search expected");
+        },
+      ),
     ).not.toThrow();
   });
 

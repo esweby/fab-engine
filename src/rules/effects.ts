@@ -477,14 +477,14 @@ export function runEffects(
         s = createTokens(s, e.token, e.amount);
         break;
       case "allowRunechantAuraPlay":
-        // UNVERIFIED: Embrace Sin grants one aura play per copy, until turn end.
+        // Embrace Sin: approved by the maintainer on 24 Oct 2026.
         s = {
           ...s,
           runechantAuraPlaysThisTurn: (s.runechantAuraPlaysThisTurn ?? 0) + 1,
         };
         break;
       case "searchRunechantAura": {
-        // UNVERIFIED: Sinspeaker puts the chosen aura into the arena without playing it.
+        // Sinspeaker: approved by the maintainer on 24 Oct 2026; put into play, not played.
         const options = s.zones.deck
           .filter((instance) => isRunechantAura(instance.card))
           .map((instance) => instance.uid);

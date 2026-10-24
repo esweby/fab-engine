@@ -537,6 +537,27 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  "Embrace Sin": {
+    2: {
+      effects: parseEffects([{ op: "allowRunechantAuraPlay" }]),
+    },
+  },
+  "Sinspeaker Gloomblade": {
+    1: {
+      effects: [],
+      usurp: true,
+      playableFromBanish: true,
+      triggers: parseTriggers([
+        {
+          id: "sinspeaker-gloomblade-search",
+          on: { event: "attacking", self: true },
+          condition: { playedFromBanish: "self" },
+          optional: true,
+          effects: [{ op: "searchRunechantAura" }],
+        },
+      ]),
+    },
+  },
   "Arknight Descendancy": {
     3: {
       effects: [],
