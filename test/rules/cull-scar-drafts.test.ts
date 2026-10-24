@@ -1,7 +1,8 @@
-// UNVERIFIED card drafts; explicit answers are not an opponent simulation.
+// Registered rules approved by the maintainer on 24 Oct 2026; no opponent simulation.
 import { describe, expect, it } from "vitest";
 import {
   applySessionAction,
+  cardWithRules,
   checkInvariants,
   moveCard,
   parseTriggers,
@@ -10,6 +11,7 @@ import {
   replaySession,
   runScript,
   setUp,
+  verifiedRulesFor,
   type Choose,
   type RulesCard,
 } from "../../src/rules/index.ts";
@@ -26,45 +28,33 @@ const filler: RulesCard = {
   amounts: {},
   effects: [],
 };
-const cull: RulesCard = {
+const cull: RulesCard = cardWithRules({
   ...filler,
   id: "cull",
-  name: "Draft Cull",
-  playableFromBanish: true,
-  instantWhen: "hero_lost_life_this_turn",
-  effects: [{ op: "banish", from: "hand", amount: 1 }],
-};
-const proposedScar = [
-  {
-    id: "draft-scar",
-    on: { event: "played", self: true },
-    effects: [
-      {
-        op: "ifAnswered",
-        condition: "less_life_than_opposing_hero",
-        then: [{ op: "grantGoAgain", target: "self" }],
-      },
-    ],
-  },
-];
+  name: "Cull",
+  pitch: 1,
+  effects: undefined,
+});
 const scar = (): RulesCard => {
-  expect(() => parseTriggers(proposedScar)).not.toThrow();
-  return {
+  const rules = verifiedRulesFor("Scar for a Scar", 1);
+  expect(rules).toBeDefined();
+  expect(() => parseTriggers(rules!.triggers)).not.toThrow();
+  return cardWithRules({
     ...filler,
     id: "scar",
-    name: "Draft Scar",
+    name: "Scar for a Scar",
+    pitch: 1,
     type: "attack_action",
-    triggers: parseTriggers(proposedScar),
-  };
+    effects: undefined,
+  });
 };
 const setup = (
   card: RulesCard,
   rest: RulesCard[] = [filler, filler, filler],
-) => ({
-  deck: [card, ...rest],
-  order: "asGiven" as const,
-  seed: 17,
-});
+) => {
+  expect(verifiedRulesFor(card.name, card.pitch)).toBeDefined();
+  return { deck: [card, ...rest], order: "asGiven" as const, seed: 17 };
+};
 const answer =
   (yes: boolean): Choose =>
   (request) =>
@@ -72,7 +62,7 @@ const answer =
       ? [yes ? "yes" : "no"]
       : request.options.slice(0, request.count);
 
-describe("Cull's proposed timing and self banish", () => {
+describe("Cull's verified timing and self banish", () => {
   it("requires an answer before using instant speed with no action point", () => {
     const initial = { ...setUp(setup(cull)), actionPoints: 0 };
     expect(() => playCard(initial, initial.zones.hand[0]!.uid)).toThrow(
@@ -137,7 +127,7 @@ describe("Cull's proposed timing and self banish", () => {
   });
 });
 
-describe("Scar's proposed explicit life comparison", () => {
+describe("Scar's verified explicit life comparison", () => {
   it.each([
     [true, 1],
     [false, 0],
@@ -195,7 +185,7 @@ describe("explicit scripted conditions", () => {
     const data = {
       version: 1,
       choices: { conditions: { less_life_than_opposing_hero: value } },
-      steps: [{ do: "play", card: { name: "Draft Scar" } }],
+      steps: [{ do: "play", card: { name: "Scar for a Scar" } }],
     };
     expect(() => parseScript(data)).not.toThrow();
     const played = runScript(setup(scar()), parseScript(data));

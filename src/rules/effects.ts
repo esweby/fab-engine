@@ -468,7 +468,7 @@ export function runEffects(
   for (const e of effects) {
     switch (e.op) {
       case "ifAnswered":
-        // UNVERIFIED card draft: the caller supplies opponent context; never infer it.
+        // The caller supplies opponent context; never infer it.
         if (answerCondition(e.condition, choose))
           s = runEffects(s, e.then, choose, new Map(bindings), tokensAtEvent);
         break;

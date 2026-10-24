@@ -539,6 +539,32 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  Cull: {
+    1: {
+      effects: parseEffects([{ op: "banish", from: "hand", amount: 1 }]),
+      playableFromBanish: true,
+      instantWhen: "hero_lost_life_this_turn",
+    },
+  },
+  "Scar for a Scar": {
+    1: {
+      effects: [],
+      goAgain: false,
+      triggers: parseTriggers([
+        {
+          id: "scar-for-a-scar-go-again",
+          on: { event: "played", self: true },
+          effects: [
+            {
+              op: "ifAnswered",
+              condition: "less_life_than_opposing_hero",
+              then: [{ op: "grantGoAgain", target: "self" }],
+            },
+          ],
+        },
+      ]),
+    },
+  },
   "Embrace Sin": {
     2: {
       effects: parseEffects([{ op: "allowRunechantAuraPlay" }]),
