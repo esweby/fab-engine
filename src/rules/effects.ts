@@ -53,6 +53,7 @@ export type Effect =
       storeAs?: string;
     }
   | { op: "createToken"; token: string; amount: number }
+  | { op: "payLifeForToken"; token: string; maximum: number }
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
   | { op: "gainActionPoint" }
@@ -136,6 +137,11 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
       storeAs: name.optional(),
     }),
     z.strictObject({ op: z.literal("createToken"), token: name, amount }),
+    z.strictObject({
+      op: z.literal("payLifeForToken"),
+      token: name,
+      maximum: amount,
+    }),
     z.strictObject({ op: z.literal("removeToken"), token: name, amount }),
     z.strictObject({ op: z.literal("gainResources"), amount }),
     z.strictObject({ op: z.literal("gainActionPoint") }),
@@ -225,11 +231,11 @@ export function validateBindings(
 
 /** A choice the rules leave to the player. */
 export interface ChoiceRequest {
-  /** cards: pick from card ids; confirm: options ["yes"], choose it or nothing. */
-  kind: "cards" | "confirm";
+  /** cards: pick ids; confirm: choose "yes" or nothing; number: choose an offered amount. */
+  kind: "cards" | "confirm" | "number";
   /** Why, in plain words: "Banish a card from hand". */
   prompt: string;
-  /** The legal options, as card ids. */
+  /** The offered card ids, confirmation or amounts as strings. */
   options: string[];
   /** How many to choose. */
   count: number;
@@ -449,6 +455,28 @@ export function runEffects(
       case "createToken":
         s = createTokens(s, e.token, e.amount);
         break;
+      case "payLifeForToken": {
+        const request: ChoiceRequest = {
+          kind: "number",
+          prompt: `Pay up to ${e.maximum} life to create that many ${e.token === "runechant" ? "Runechants" : e.token}`,
+          options: Array.from({ length: e.maximum + 1 }, (_, amount) =>
+            String(amount),
+          ),
+          count: 1,
+          optional: false,
+        };
+        const chosen = choose(request);
+        checkChoice(request, chosen);
+        const paid = Number(chosen[0]);
+        if (paid > 0) {
+          s = withEvents(
+            { ...s, lifeLost: s.lifeLost + paid },
+            { type: "lifeLost", amount: paid },
+          );
+          s = createTokens(s, e.token, paid);
+        }
+        break;
+      }
       case "removeToken":
         s = removeTokens(s, e.token, e.amount);
         break;

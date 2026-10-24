@@ -35,7 +35,7 @@ export interface RulesCard extends EngineCard {
   effects?: Effect[];
   /** Usurp: as an additional cost, destroy a Runechant if able (+2 power if you do). */
   usurp?: boolean;
-  /** The card's own triggers, live while it's in the arena; "self" binds the card. */
+  /** Own triggers in the arena or on this card's pitch/banish event; "self" binds the card. */
   triggers?: Trigger[];
   /** "You may play this from your banished zone." */
   playableFromBanish?: boolean;

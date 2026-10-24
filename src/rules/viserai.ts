@@ -33,7 +33,12 @@ export const VISERAI: Trigger[] = parseTriggers([
       { op: "banish", from: "deckTop", amount: 1 },
       {
         op: "if",
-        check: { createdThisTurn: "runechant", atLeast: 3 },
+        check: {
+          all: [
+            { side: "forsaken" },
+            { createdThisTurn: "runechant", atLeast: 3 },
+          ],
+        },
         then: [{ op: "traverse" }],
       },
     ],

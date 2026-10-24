@@ -22,6 +22,7 @@ import {
   RulesBudgetExceeded,
   RulesError,
   withEvents,
+  instance,
   type RulesEvent,
   type RulesState,
 } from "./state.ts";
@@ -131,13 +132,28 @@ const bindingsFor = (e: RulesEvent, self: string | undefined) =>
     ["self", self ? [self] : []],
   ]);
 
-/** The triggers in play: the game's own (hero, tokens, rules) and those of cards in the arena. */
-function triggersInPlay(s: RulesState) {
+/** Game and arena triggers, plus the event card's own pitch or face-up banish triggers. */
+function triggersInPlay(s: RulesState, event: RulesEvent) {
+  const ownOutsideArena =
+    (event.type === "pitched" ||
+      (event.type === "moved" && event.to === "banished" && !event.faceDown)) &&
+    !s.zones.arena.some((card) => card.uid === event.uid)
+      ? (instance(s, event.uid).card.triggers ?? [])
+          .filter(
+            (trigger) =>
+              trigger.on.self &&
+              (event.type === "pitched"
+                ? trigger.on.event === "pitched"
+                : trigger.on.event === "moved" && trigger.on.to === "banished"),
+          )
+          .map((trigger) => ({ trigger, self: event.uid }))
+      : [];
   return [
     ...s.triggers.map((trigger) => ({ trigger, self: undefined })),
     ...s.zones.arena.flatMap((i) =>
       (i.card.triggers ?? []).map((trigger) => ({ trigger, self: i.uid })),
     ),
+    ...ownOutsideArena,
   ];
 }
 
@@ -164,7 +180,7 @@ export function resolveTriggers(
   for (;;) {
     for (; cursor < s.events.length; cursor++) {
       const event = s.events[cursor]!;
-      for (const { trigger, self } of triggersInPlay(s))
+      for (const { trigger, self } of triggersInPlay(s, event))
         if (
           matches(trigger.on, event, self) &&
           !(

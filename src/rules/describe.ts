@@ -73,6 +73,8 @@ function phrase(e: Effect): string {
     }
     case "createToken":
       return `create ${tokens(e.token, e.amount)}`;
+    case "payLifeForToken":
+      return `pay up to ${e.maximum} life to create that many ${TOKENS[e.token]?.[1] ?? e.token} (the player chooses)`;
     case "removeToken":
       return `destroy ${tokens(e.token, e.amount)}`;
     case "gainResources":

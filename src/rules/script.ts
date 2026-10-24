@@ -57,6 +57,8 @@ export interface Script {
     banish?: Selector[];
     /** Optional triggers by id: false to decline. Unlisted ones are used. */
     optional?: Record<string, boolean>;
+    /** UNVERIFIED policy: pay this amount when asked; default zero, with no tactical claim. */
+    lifePayment?: number;
   };
   steps: ScriptStep[];
 }
@@ -101,6 +103,7 @@ const scriptSchema = z.strictObject({
     .strictObject({
       banish: z.array(selectorSchema).max(20).optional(),
       optional: z.record(text, z.boolean()).optional(),
+      lifePayment: z.number().int().min(0).max(20).optional(),
     })
     .optional(),
   steps: z.array(stepSchema).max(200),
@@ -198,6 +201,14 @@ export function scriptedOpt(
 /** The scripted policy's answers to the rules' choices. */
 function scriptedChoices(script: Script, current: () => RulesState): Choose {
   return (request: ChoiceRequest) => {
+    if (request.kind === "number") {
+      const answer = String(script.choices?.lifePayment ?? 0);
+      if (!request.options.includes(answer))
+        throw new RulesError(
+          `Life payment ${answer} is not one of the offered choices.`,
+        );
+      return [answer];
+    }
     if (request.kind === "confirm")
       return script.choices?.optional?.[request.source ?? ""] === false
         ? []
