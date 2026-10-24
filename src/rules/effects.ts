@@ -16,6 +16,16 @@ import {
   type RulesState,
 } from "./state.ts";
 
+export const EXPLICIT_CONDITIONS = [
+  "less_life_than_opposing_hero",
+  "hero_lost_life_this_turn",
+] as const;
+export type ExplicitCondition = (typeof EXPLICIT_CONDITIONS)[number];
+export const CONDITION_TEXT: Record<ExplicitCondition, string> = {
+  less_life_than_opposing_hero: "you have less life than an opposing hero",
+  hero_lost_life_this_turn: "a hero has lost life this turn",
+};
+
 export type Check =
   /** A card bound earlier has this trait (class, talent or fact, e.g. "shadow"). */
   | { has: string; target: string }
@@ -85,6 +95,7 @@ export type Effect =
   | { op: "destroySelfIfNoCounters" }
   /** This card ("self") from the arena to the graveyard (a sinchant destroying itself). */
   | { op: "destroySelf" }
+  | { op: "ifAnswered"; condition: ExplicitCondition; then: Effect[] }
   | { op: "if"; check: Check; then: Effect[]; else?: Effect[] };
 
 const name = z.string().min(1).max(40);
@@ -178,6 +189,11 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
     z.strictObject({ op: z.literal("destroySelfIfNoCounters") }),
     z.strictObject({ op: z.literal("destroySelf") }),
     z.strictObject({
+      op: z.literal("ifAnswered"),
+      condition: z.enum(EXPLICIT_CONDITIONS),
+      then: z.array(effectSchema),
+    }),
+    z.strictObject({
       op: z.literal("if"),
       check: checkSchema,
       then: z.array(effectSchema),
@@ -200,6 +216,7 @@ function bindingsUsed(check: Check): string[] {
 function checkBindings(effects: Effect[], bound: Set<string>) {
   const here = new Set(bound);
   for (const e of effects) {
+    if (e.op === "ifAnswered") checkBindings(e.then, here);
     if (e.op === "if") {
       for (const b of bindingsUsed(e.check))
         if (!here.has(b))
@@ -240,8 +257,9 @@ export function validateBindings(
 
 /** A choice the rules leave to the player. */
 export interface ChoiceRequest {
-  /** cards: pick ids; confirm: choose "yes" or nothing; number: choose an offered amount. */
-  kind: "cards" | "confirm" | "number";
+  /** cards: pick ids; confirm: yes or nothing; number: amount; condition: explicit yes or no. */
+  kind: "cards" | "confirm" | "number" | "condition";
+  condition?: ExplicitCondition;
   /** Why, in plain words: "Banish a card from hand". */
   prompt: string;
   /** The offered card ids, confirmation or amounts as strings. */
@@ -273,6 +291,28 @@ function checkChoice(request: ChoiceRequest, chosen: string[]) {
     throw new RulesError(
       `Not a legal choice for "${request.prompt}": choose ${request.count} of the options.`,
     );
+}
+
+export class ExplicitAnswerRequired extends RulesError {}
+
+export function answerCondition(
+  condition: ExplicitCondition,
+  choose: Choose,
+): boolean {
+  const request: ChoiceRequest = {
+    kind: "condition",
+    condition,
+    prompt:
+      condition === "hero_lost_life_this_turn"
+        ? "Play this as an instant? Only choose Yes if a hero has lost life this turn."
+        : "Do you have less life than an opposing hero?",
+    options: ["yes", "no"],
+    count: 1,
+    optional: false,
+  };
+  const chosen = choose(request);
+  checkChoice(request, chosen);
+  return chosen[0] === "yes";
 }
 
 export function holds(
@@ -427,6 +467,11 @@ export function runEffects(
   let s = state;
   for (const e of effects) {
     switch (e.op) {
+      case "ifAnswered":
+        // UNVERIFIED card draft: the caller supplies opponent context; never infer it.
+        if (answerCondition(e.condition, choose))
+          s = runEffects(s, e.then, choose, new Map(bindings), tokensAtEvent);
+        break;
       case "banish": {
         let chosen: string[];
         if (e.from === "deckTop") {

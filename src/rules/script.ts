@@ -9,11 +9,14 @@
 import { z } from "zod";
 import {
   checkSchema,
+  EXPLICIT_CONDITIONS,
+  ExplicitAnswerRequired,
   holds,
   validateBindings,
   type Check,
   type ChoiceRequest,
   type Choose,
+  type ExplicitCondition,
 } from "./effects.ts";
 import {
   effectiveCost,
@@ -61,6 +64,8 @@ export interface Script {
     optional?: Record<string, boolean>;
     /** UNVERIFIED policy: pay this amount when asked; default zero, with no tactical claim. */
     lifePayment?: number;
+    /** Explicit assumptions for this run, not a policy inferred from opponent state. */
+    conditions?: Partial<Record<ExplicitCondition, boolean>>;
   };
   steps: ScriptStep[];
 }
@@ -107,6 +112,9 @@ const scriptSchema = z.strictObject({
       search: z.array(selectorSchema).max(20).optional(),
       optional: z.record(text, z.boolean()).optional(),
       lifePayment: z.number().int().min(0).max(20).optional(),
+      conditions: z
+        .partialRecord(z.enum(EXPLICIT_CONDITIONS), z.boolean())
+        .optional(),
     })
     .optional(),
   steps: z.array(stepSchema).max(200),
@@ -204,6 +212,15 @@ export function scriptedOpt(
 /** The scripted policy's answers to the rules' choices. */
 function scriptedChoices(script: Script, current: () => RulesState): Choose {
   return (request: ChoiceRequest) => {
+    if (request.kind === "condition") {
+      const answer =
+        request.condition && script.choices?.conditions?.[request.condition];
+      if (typeof answer !== "boolean")
+        throw new ExplicitAnswerRequired(
+          `An explicit answer is required for ${request.condition}.`,
+        );
+      return [answer ? "yes" : "no"];
+    }
     if (request.kind === "number") {
       const answer = String(script.choices?.lifePayment ?? 0);
       if (!request.options.includes(answer))
@@ -301,6 +318,7 @@ export function runScript(setup: RulesSetup, script: Script): ScriptRun {
         steps.push({ step, outcome: "done" });
         return;
       } catch (e) {
+        if (e instanceof ExplicitAnswerRequired) throw e;
         if (!(e instanceof RulesError) || e instanceof RulesBudgetExceeded)
           throw e;
         reason = e.message;

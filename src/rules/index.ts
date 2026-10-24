@@ -24,6 +24,7 @@ export {
   type ChoiceRequest,
   type Choose,
   type Effect,
+  type ExplicitCondition,
 } from "./effects.ts";
 export {
   activateCard,

@@ -23,6 +23,8 @@ export interface RulesCard extends EngineCard {
   cost: number | null;
   /** Natural go again (the keyword); conditional go again comes from effects. */
   goAgain: boolean;
+  /** UNVERIFIED draft: an explicit answer chooses instant mode, only in the action phase. */
+  instantWhen?: "hero_lost_life_this_turn";
   /**
    * Printed power, for threatened damage only (docs/engine-calibration.md): combat stays out of
    * scope, so nothing is blocked. Missing or null counts as 0.

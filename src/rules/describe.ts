@@ -1,6 +1,6 @@
 // Effects in plain words (docs/rules-engine.md, step 9): how a draft or a verified card's rules
 // read, so a player can check them against the printed text.
-import type { Check, Effect } from "./effects.ts";
+import { CONDITION_TEXT, type Check, type Effect } from "./effects.ts";
 
 const TOKENS: Record<string, [string, string]> = {
   runechant: ["Runechant", "Runechants"],
@@ -62,6 +62,8 @@ function check(c: Check): string {
 
 function phrase(e: Effect): string {
   switch (e.op) {
+    case "ifAnswered":
+      return `if ${CONDITION_TEXT[e.condition]} (the player answers): ${e.then.map(phrase).join(", then ")}`;
     case "banish": {
       const n = `${e.amount} card${e.amount === 1 ? "" : "s"}`;
       const from =

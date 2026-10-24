@@ -1,7 +1,12 @@
 // The player's actions (docs/rules-engine.md, steps 2 to 4): play, pitch and end the turn. Each
 // resolves the triggers its events set off before it returns. A card with no verified effects
 // can't be played by the engine. UNVERIFIED turn rules: see state.ts.
-import { noChoices, runEffects, type Choose } from "./effects.ts";
+import {
+  answerCondition,
+  noChoices,
+  runEffects,
+  type Choose,
+} from "./effects.ts";
 import { resolveTriggers } from "./triggers.ts";
 import {
   finishEndPhase,
@@ -95,7 +100,10 @@ export function playCard(
     if (dealt < card.needsDamageThisTurn)
       throw new RulesError(`${card.name} needs damage dealt this turn.`);
   }
-  const action = NEEDS_ACTION_POINT.has(card.type ?? "");
+  const asInstant = card.instantWhen
+    ? answerCondition(card.instantWhen, choose)
+    : false;
+  const action = NEEDS_ACTION_POINT.has(card.type ?? "") && !asInstant;
   if (action && s.actionPoints < 1)
     throw new RulesError("No action point left.");
   const cost = effectiveCost(s, uid);
@@ -110,7 +118,8 @@ export function playCard(
       ? { runechantAuraPlaysThisTurn: (s.runechantAuraPlaysThisTurn ?? 0) - 1 }
       : {}),
     resources: s.resources - cost,
-    actionPoints: s.actionPoints - (action ? 1 : 0) + (card.goAgain ? 1 : 0),
+    actionPoints:
+      s.actionPoints - (action ? 1 : 0) + (!asInstant && card.goAgain ? 1 : 0),
   };
   // Usurp: an additional cost, paid if able.
   if (card.usurp && (paid.tokens.runechant ?? 0) > 0)

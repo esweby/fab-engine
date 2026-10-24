@@ -130,6 +130,8 @@ export const BLOOD_DEBT: Trigger = parseTriggers([
 
 interface CardRules {
   effects: Effect[];
+  goAgain?: boolean;
+  instantWhen?: RulesCard["instantWhen"];
   usurp?: boolean;
   triggers?: Trigger[];
   playableFromBanish?: boolean;
