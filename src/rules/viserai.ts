@@ -232,6 +232,26 @@ export const CARD_RULES: Record<string, CardRules> = {
       },
     ]),
   },
+  "Bloodfrenzy Gloomblade": {
+    effects: [],
+    usurp: true,
+    playableFromBanish: true,
+    triggers: parseTriggers(
+      (["played", "arcaneDamage", "damageNoted"] as const).map((event) => ({
+        id: `bloodfrenzy-gloomblade-go-again-${event}`,
+        on: { event, ...(event === "played" ? { self: true } : {}) },
+        effects: [
+          {
+            op: "if",
+            check: {
+              all: [{ latestAttack: "self" }, { damageDealtThisTurn: 1 }],
+            },
+            then: [{ op: "grantGoAgain", target: "self" }],
+          },
+        ],
+      })),
+    ),
+  },
   // "You may play this from your banished zone. Usurp. When this hits a hero, they banish a card
   // from their hand. Blood Debt" — the hit is out of scope.
   "Cullingsong Gloomblade": {
