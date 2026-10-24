@@ -6,7 +6,6 @@
 //
 // When the engine needs a choice, the action stops with NeedsChoice. The interface asks, then
 // applies the action again with the answer recorded on it, so a session's log replays exactly.
-import { shuffle } from "../index.ts";
 import type { Zone } from "../game.ts";
 import { noChoices, type ChoiceRequest, type Choose } from "./effects.ts";
 import { resolveTriggers } from "./triggers.ts";
@@ -26,6 +25,7 @@ import {
   RulesError,
   setUp,
   withEvents,
+  shuffleDeck,
   type RulesSetup,
   type RulesState,
 } from "./state.ts";
@@ -189,21 +189,8 @@ export function applySessionAction(
     }
     case "draw":
       return manual(draw(s, action.count ?? 1), "draw");
-    case "shuffle": {
-      // Each shuffle gets its own seed from the game's: the same session shuffles the same way.
-      const before = s.events.filter((e) => e.type === "shuffled").length;
-      const shuffled = withEvents(
-        {
-          ...s,
-          zones: {
-            ...s.zones,
-            deck: shuffle(s.zones.deck, s.seed * 31 + before + 1),
-          },
-        },
-        { type: "shuffled" },
-      );
-      return manual(shuffled, "shuffle");
-    }
+    case "shuffle":
+      return manual(shuffleDeck(s), "shuffle");
     default:
       throw new RulesError(
         `Unknown action: ${(action as { type?: string }).type ?? "none"}.`,

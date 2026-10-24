@@ -6,6 +6,7 @@ import { resolveTriggers } from "./triggers.ts";
 import {
   finishEndPhase,
   instance,
+  isRunechantAura,
   pitchOnly,
   removeTokens,
   startEndPhase,
@@ -58,16 +59,20 @@ export function playCard(
 ): RulesState {
   const { card } = instance(s, uid);
   const from = zoneOf(s, uid);
+  const independentPermission =
+    card.playableFromBanish ||
+    (card.playableFromBanishWhen === "usurpedThisTurn" && usurpedThisTurn(s)) ||
+    s.playableThisTurn.includes(uid);
+  const usesAuraPermission =
+    from === "banished" &&
+    !independentPermission &&
+    isRunechantAura(card) &&
+    (s.runechantAuraPlaysThisTurn ?? 0) > 0;
   if (from === "banished") {
     // UNVERIFIED reading: a face-down card can't be played from there.
     if (
       s.faceDown.includes(uid) ||
-      !(
-        card.playableFromBanish ||
-        (card.playableFromBanishWhen === "usurpedThisTurn" &&
-          usurpedThisTurn(s)) ||
-        s.playableThisTurn.includes(uid)
-      )
+      !(independentPermission || usesAuraPermission)
     )
       throw new RulesError(
         `${card.name} can't be played from the banished zone.`,
@@ -101,6 +106,9 @@ export function playCard(
   const attack = card.type === "attack_action";
   let paid: RulesState = {
     ...s,
+    ...(usesAuraPermission
+      ? { runechantAuraPlaysThisTurn: (s.runechantAuraPlaysThisTurn ?? 0) - 1 }
+      : {}),
     resources: s.resources - cost,
     actionPoints: s.actionPoints - (action ? 1 : 0) + (card.goAgain ? 1 : 0),
   };

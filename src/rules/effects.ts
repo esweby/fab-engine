@@ -7,10 +7,12 @@ import type { HeroSide } from "../game.ts";
 import {
   createTokens,
   instance,
+  isRunechantAura,
   moveCard,
   removeTokens,
   RulesError,
   withEvents,
+  shuffleDeck,
   type RulesState,
 } from "./state.ts";
 
@@ -21,6 +23,7 @@ export type Check =
   | { activatedThisTurn: string; atLeast: number }
   | { damageDealtThisTurn: number }
   | { latestAttack: string }
+  | { playedFromBanish: string }
   /** The bound card is of this type and/or has this trait. */
   | { cardIs: { type?: string; trait?: string }; target: string }
   /** The bound card has at least this many counters. */
@@ -53,6 +56,8 @@ export type Effect =
       storeAs?: string;
     }
   | { op: "createToken"; token: string; amount: number }
+  | { op: "allowRunechantAuraPlay" }
+  | { op: "searchRunechantAura" }
   | { op: "payLifeForToken"; token: string; maximum: number }
   | { op: "removeToken"; token: string; amount: number }
   | { op: "gainResources"; amount: number }
@@ -94,6 +99,7 @@ export const checkSchema: z.ZodType<Check> = z.lazy(() =>
     z.strictObject({ tokens: name, atLeast: z.number().int().min(0) }),
     z.strictObject({ damageDealtThisTurn: z.number().int().min(1) }),
     z.strictObject({ latestAttack: name }),
+    z.strictObject({ playedFromBanish: name }),
     z.strictObject({
       activatedThisTurn: name,
       atLeast: z.number().int().min(0),
@@ -137,6 +143,8 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
       storeAs: name.optional(),
     }),
     z.strictObject({ op: z.literal("createToken"), token: name, amount }),
+    z.strictObject({ op: z.literal("allowRunechantAuraPlay") }),
+    z.strictObject({ op: z.literal("searchRunechantAura") }),
     z.strictObject({
       op: z.literal("payLifeForToken"),
       token: name,
@@ -179,6 +187,7 @@ export const effectSchema: z.ZodType<Effect> = z.lazy(() =>
 );
 
 function bindingsUsed(check: Check): string[] {
+  if ("playedFromBanish" in check) return [check.playedFromBanish];
   if ("latestAttack" in check) return [check.latestAttack];
   if ("target" in check) return [check.target];
   if ("all" in check) return check.all.flatMap(bindingsUsed);
@@ -271,6 +280,18 @@ export function holds(
   check: Check,
   bindings: Map<string, string[]>,
 ): boolean {
+  if ("playedFromBanish" in check) {
+    const target = bindings.get(check.playedFromBanish)?.[0];
+    const played = s.events.findLastIndex(
+      (event) => event.type === "played" && event.uid === target,
+    );
+    const previous = s.events[played - 1];
+    return (
+      !!target &&
+      previous?.type === "playedFromBanish" &&
+      previous.uid === target
+    );
+  }
   if ("damageDealtThisTurn" in check) {
     const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
     const damage = s.events
@@ -455,6 +476,38 @@ export function runEffects(
       case "createToken":
         s = createTokens(s, e.token, e.amount);
         break;
+      case "allowRunechantAuraPlay":
+        // UNVERIFIED: Embrace Sin grants one aura play per copy, until turn end.
+        s = {
+          ...s,
+          runechantAuraPlaysThisTurn: (s.runechantAuraPlaysThisTurn ?? 0) + 1,
+        };
+        break;
+      case "searchRunechantAura": {
+        // UNVERIFIED: Sinspeaker puts the chosen aura into the arena without playing it.
+        const options = s.zones.deck
+          .filter((instance) => isRunechantAura(instance.card))
+          .map((instance) => instance.uid);
+        const request: ChoiceRequest = {
+          kind: "cards",
+          prompt: "Search your deck for an aura with Runechant in its name",
+          options,
+          count: 1,
+          optional: true,
+        };
+        const chosen = options.length > 0 ? choose(request) : [];
+        checkChoice(request, chosen);
+        if (chosen[0]) {
+          const selected = instance(s, chosen[0]);
+          if (selected.card.effects === undefined)
+            throw new RulesError(
+              `${selected.card.name} has no verified effects yet, so it can't be put into the arena.`,
+            );
+          s = moveCard(s, chosen[0], "arena");
+        }
+        s = shuffleDeck(s);
+        break;
+      }
       case "payLifeForToken": {
         const request: ChoiceRequest = {
           kind: "number",

@@ -26,6 +26,7 @@ const tokens = (token: string, n: number) => {
 };
 
 function check(c: Check): string {
+  if ("playedFromBanish" in c) return "this was played from the banished zone";
   if ("damageDealtThisTurn" in c)
     return c.damageDealtThisTurn === 1
       ? "you've dealt damage to the defending hero this turn"
@@ -73,6 +74,10 @@ function phrase(e: Effect): string {
     }
     case "createToken":
       return `create ${tokens(e.token, e.amount)}`;
+    case "allowRunechantAuraPlay":
+      return "you may play one aura with Runechant in its name from your banished zone this turn";
+    case "searchRunechantAura":
+      return "search your deck for an aura with Runechant in its name, put it into the arena, then shuffle your deck";
     case "payLifeForToken":
       return `pay up to ${e.maximum} life to create that many ${TOKENS[e.token]?.[1] ?? e.token} (the player chooses)`;
     case "removeToken":

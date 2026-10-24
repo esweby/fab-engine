@@ -132,6 +132,8 @@ export interface RulesState {
   counters: Record<string, number>;
   /** Cards that may be played from the banished zone this turn (a Gate's target). */
   playableThisTurn: string[];
+  /** Remaining single-aura permissions from Embrace Sin this turn. */
+  runechantAuraPlaysThisTurn?: number;
   /** Weapons that have attacked and once-per-turn triggers that have fired, this turn. */
   usedThisTurn: string[];
   resources: number;
@@ -265,6 +267,7 @@ export function setUp(setup: RulesSetup): RulesState {
     lifeLost: 0,
     counters: {},
     playableThisTurn: [],
+    runechantAuraPlaysThisTurn: 0,
     usedThisTurn: [],
     resources: 0,
     actionPoints: 0,
@@ -305,6 +308,24 @@ export function moveCard(
         : s.faceDown.filter((u) => u !== uid),
     },
     { type: "moved", uid, from, to, faceDown },
+  );
+}
+
+export function isRunechantAura(card: RulesCard): boolean {
+  return card.traits.includes("aura") && card.name.includes("Runechant");
+}
+
+export function shuffleDeck(s: RulesState): RulesState {
+  const before = s.events.filter((event) => event.type === "shuffled").length;
+  return withEvents(
+    {
+      ...s,
+      zones: {
+        ...s.zones,
+        deck: shuffle(s.zones.deck, s.seed * 31 + before + 1),
+      },
+    },
+    { type: "shuffled" },
   );
 }
 
@@ -402,6 +423,7 @@ export function finishEndPhase(
       createdThisTurn: {},
       activatedThisTurn: {},
       playableThisTurn: [],
+      runechantAuraPlaysThisTurn: 0,
       usedThisTurn: [],
     },
     { type: "turnEnded", turn: s.turn },

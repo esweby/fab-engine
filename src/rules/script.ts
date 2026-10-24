@@ -55,6 +55,8 @@ export interface Script {
   choices?: {
     /** When a card must be banished from hand: the first of these that fits, in order. */
     banish?: Selector[];
+    /** UNVERIFIED policy: explicit search preferences, otherwise lowest pitch first. */
+    search?: Selector[];
     /** Optional triggers by id: false to decline. Unlisted ones are used. */
     optional?: Record<string, boolean>;
     /** UNVERIFIED policy: pay this amount when asked; default zero, with no tactical claim. */
@@ -102,6 +104,7 @@ const scriptSchema = z.strictObject({
   choices: z
     .strictObject({
       banish: z.array(selectorSchema).max(20).optional(),
+      search: z.array(selectorSchema).max(20).optional(),
       optional: z.record(text, z.boolean()).optional(),
       lifePayment: z.number().int().min(0).max(20).optional(),
     })
@@ -226,7 +229,9 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
     );
     const preferred = request.prompt.startsWith("Banish")
       ? (script.choices?.banish ?? [])
-      : [];
+      : request.prompt.startsWith("Search")
+        ? (script.choices?.search ?? [])
+        : [];
     const ranked = [
       ...preferred.flatMap((sel) => options.filter((i) => fits(i, sel))),
       ...[...options].sort(
