@@ -1,4 +1,4 @@
-// UNVERIFIED drafts for Descendancy and Shard; neither card gains verified rules here.
+// Descendancy and Shard, approved by the maintainer on 24 Oct 2026.
 import { describe, expect, it } from "vitest";
 import {
   applySessionAction,
@@ -19,6 +19,7 @@ import {
   runScript,
   setUp,
   VISERAI,
+  verifiedRulesFor,
   type Choose,
   type Effect,
   type RulesCard,
@@ -43,34 +44,22 @@ const filler: RulesCard = {
   amounts: {},
   effects: [],
 };
-const descendant: RulesCard = {
+const descendant: RulesCard = cardWithRules({
   ...filler,
   id: "descendant",
-  name: "Draft Descendancy",
+  name: "Arknight Descendancy",
   type: "attack_action",
   cost: 5,
   traits: ["blood_debt", "shadow", "runeblade"],
-  costReductions: [{ amount: "perRunechant" }],
-  triggers: [
-    {
-      id: "draft-descendancy-banished",
-      on: { event: "moved", to: "banished", self: true },
-      effects: [payment],
-    },
-  ],
-};
-const shard: RulesCard = {
+  effects: undefined,
+});
+const shard: RulesCard = cardWithRules({
   ...filler,
   id: "shard",
-  name: "Draft Shard",
-  triggers: [
-    {
-      id: "draft-shard-pitched",
-      on: { event: "pitched", self: true },
-      effects: [{ op: "createToken", token: "runechant", amount: 1 }],
-    },
-  ],
-};
+  name: "Arknight Shard",
+  type: "resource",
+  effects: undefined,
+});
 const banisher: RulesCard = {
   ...filler,
   id: "banisher",
@@ -123,6 +112,13 @@ describe("paying life for tokens", () => {
 });
 
 describe("own triggers outside the arena", () => {
+  it("registers the accepted blue rules only", () => {
+    for (const name of [descendant.name, shard.name]) {
+      expect(verifiedRulesFor(name, 3)).toBeDefined();
+      expect(verifiedRulesFor(name, 1)).toBeUndefined();
+      expect(verifiedRulesFor(name, 2)).toBeUndefined();
+    }
+  });
   it("supports BSL into Descendancy and then a legal Nebula swing", () => {
     const bsl = cardWithRules({
       ...filler,

@@ -537,6 +537,31 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  "Arknight Descendancy": {
+    3: {
+      effects: [],
+      costReductions: [{ amount: "perRunechant" }],
+      triggers: parseTriggers([
+        {
+          id: "arknight-descendancy-banished",
+          on: { event: "moved", to: "banished", self: true },
+          effects: [{ op: "payLifeForToken", token: "runechant", maximum: 3 }],
+        },
+      ]),
+    },
+  },
+  "Arknight Shard": {
+    3: {
+      effects: [],
+      triggers: parseTriggers([
+        {
+          id: "arknight-shard-pitched",
+          on: { event: "pitched", self: true },
+          effects: [{ op: "createToken", token: "runechant", amount: 1 }],
+        },
+      ]),
+    },
+  },
   "Usurp the Shadow Throne": {
     3: {
       effects: [],
