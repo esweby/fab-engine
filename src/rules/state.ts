@@ -39,6 +39,8 @@ export interface RulesCard extends EngineCard {
   triggers?: Trigger[];
   /** "You may play this from your banished zone." */
   playableFromBanish?: boolean;
+  /** UNVERIFIED draft permission, checked before paying the card's own costs. */
+  playableFromBanishWhen?: "usurpedThisTurn";
   /** "If this would be put into your graveyard from anywhere, instead banish it." */
   graveyardToBanish?: boolean;
   /**

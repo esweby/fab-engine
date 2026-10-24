@@ -26,6 +26,11 @@ const PLAYABLE_IN_ACTION_PHASE = new Set([
   "instant",
 ]);
 
+function usurpedThisTurn(s: RulesState): boolean {
+  const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
+  return s.events.slice(turnStart + 1).some((e) => e.type === "usurped");
+}
+
 /**
  * What a card costs to play now, after its reductions: Runechants are counted as it's played
  * (before Usurp destroys one), and a usurp counts only if it came earlier this turn.
@@ -34,10 +39,7 @@ export function effectiveCost(s: RulesState, uid: string): number {
   const { card } = instance(s, uid);
   const cost = card.cost ?? 0;
   if (!card.costReductions?.length) return cost;
-  const turnStart = s.events.findLastIndex((e) => e.type === "turnStarted");
-  const usurped = s.events
-    .slice(turnStart + 1)
-    .some((e) => e.type === "usurped");
+  const usurped = usurpedThisTurn(s);
   const fromBanish = zoneOf(s, uid) === "banished";
   const off = card.costReductions.reduce((n, r) => {
     if (r.amount === "perRunechant") return n + (s.tokens.runechant ?? 0);
@@ -60,7 +62,12 @@ export function playCard(
     // UNVERIFIED reading: a face-down card can't be played from there.
     if (
       s.faceDown.includes(uid) ||
-      !(card.playableFromBanish || s.playableThisTurn.includes(uid))
+      !(
+        card.playableFromBanish ||
+        (card.playableFromBanishWhen === "usurpedThisTurn" &&
+          usurpedThisTurn(s)) ||
+        s.playableThisTurn.includes(uid)
+      )
     )
       throw new RulesError(
         `${card.name} can't be played from the banished zone.`,

@@ -128,6 +128,7 @@ interface CardRules {
   usurp?: boolean;
   triggers?: Trigger[];
   playableFromBanish?: boolean;
+  playableFromBanishWhen?: RulesCard["playableFromBanishWhen"];
   graveyardToBanish?: boolean;
   activate?: RulesCard["activate"];
   weaponAttack?: RulesCard["weaponAttack"];
