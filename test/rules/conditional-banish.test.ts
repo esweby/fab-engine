@@ -1,4 +1,4 @@
-// UNVERIFIED draft behaviour for Usurp the Shadow Throne; the card remains unmodelled.
+// Conditional banish permission, accepted for Usurp the Shadow Throne on 24 Oct 2026.
 import { describe, expect, it } from "vitest";
 import {
   activateGate,

@@ -532,6 +532,13 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  "Usurp the Shadow Throne": {
+    3: {
+      effects: [],
+      costReductions: [{ amount: 6, when: "usurpedThisTurn" }],
+      playableFromBanishWhen: "usurpedThisTurn",
+    },
+  },
   "Malefic Incantation": { 1: malefic(3), 2: malefic(2), 3: malefic(1) },
   // Accepted on the effects page, 20 Oct 2026 (as above).
   // "Opt 3, then banish the top card of your deck."
