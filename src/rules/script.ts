@@ -293,7 +293,14 @@ class Stop {}
 
 /** Runs a script from a setup. The same setup and script always give the same run. */
 export function runScript(setup: RulesSetup, script: Script): ScriptRun {
-  let state = setUp(setup);
+  return runScriptFromState(setUp(setup), script);
+}
+
+export function runScriptFromState(
+  initial: RulesState,
+  script: Script,
+): ScriptRun {
+  let state = initial;
   const steps: StepOutcome[] = [];
   const choose = scriptedChoices(script, () => state);
 
