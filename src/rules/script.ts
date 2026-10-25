@@ -58,12 +58,19 @@ export interface Script {
   choices?: {
     /** When a card must be banished from hand: the first of these that fits, in order. */
     banish?: Selector[];
+    keep?: Selector[];
     /** UNVERIFIED policy: explicit search preferences, otherwise lowest pitch first. */
     search?: Selector[];
     /** Optional triggers by id: false to decline. Unlisted ones are used. */
     optional?: Record<string, boolean>;
-    /** UNVERIFIED policy: pay this amount when asked; default zero, with no tactical claim. */
-    lifePayment?: number;
+    /** UNVERIFIED policy: fixed payment or the maximum leaving the stated life; default zero. */
+    lifePayment?:
+      | number
+      | {
+          card: { name: string; pitch?: number };
+          startingLife: number;
+          minimumRemainingLife: number;
+        };
     /** Explicit assumptions for this run, not a policy inferred from opponent state. */
     conditions?: Partial<Record<ExplicitCondition, boolean>>;
   };
@@ -113,9 +120,22 @@ const scriptSchema = z.strictObject({
   choices: z
     .strictObject({
       banish: z.array(selectorSchema).max(20).optional(),
+      keep: z.array(selectorSchema).max(20).optional(),
       search: z.array(selectorSchema).max(20).optional(),
       optional: z.record(text, z.boolean()).optional(),
-      lifePayment: z.number().int().min(0).max(20).optional(),
+      lifePayment: z
+        .union([
+          z.number().int().min(0).max(20),
+          z.strictObject({
+            card: z.strictObject({
+              name: text,
+              pitch: z.number().int().min(0).max(3).optional(),
+            }),
+            startingLife: z.number().int().positive(),
+            minimumRemainingLife: z.number().int().positive(),
+          }),
+        ])
+        .optional(),
       conditions: z
         .partialRecord(z.enum(EXPLICIT_CONDITIONS), z.boolean())
         .optional(),
@@ -226,7 +246,24 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
       return [answer ? "yes" : "no"];
     }
     if (request.kind === "number") {
-      const answer = String(script.choices?.lifePayment ?? 0);
+      const policy = script.choices?.lifePayment;
+      const context = request.paymentContext;
+      let amount = typeof policy === "number" ? policy : 0;
+      if (
+        typeof policy === "object" &&
+        context?.card &&
+        context.card.name === policy.card.name &&
+        (policy.card.pitch === undefined ||
+          context.card.pitch === policy.card.pitch)
+      ) {
+        const affordable =
+          policy.startingLife - context.lifeLost - policy.minimumRemainingLife;
+        amount = Math.max(
+          0,
+          ...request.options.map(Number).filter((value) => value <= affordable),
+        );
+      }
+      const answer = String(amount);
       if (!request.options.includes(answer))
         throw new RulesError(
           `Life payment ${answer} is not one of the offered choices.`,
@@ -243,11 +280,17 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
         request.options.map((uid) => s.zones.deck.find((i) => i.uid === uid)!),
         request.prefer,
       );
-    const options = request.options.map((uid) =>
-      [...s.zones.hand, ...s.zones.graveyard, ...s.zones.deck].find(
-        (i) => i.uid === uid,
-      )!,
-    );
+    const options = request.options
+      .map((uid) =>
+        [...s.zones.hand, ...s.zones.graveyard, ...s.zones.deck].find(
+          (i) => i.uid === uid,
+        )!,
+      )
+      .filter(
+        (instance) =>
+          request.from !== "hand" ||
+          !script.choices?.keep?.some((selector) => fits(instance, selector)),
+      );
     const preferred = request.prompt.startsWith("Banish")
       ? (script.choices?.banish ?? [])
       : request.prompt.startsWith("Search")
@@ -264,10 +307,20 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
 }
 
 /** Pitch from hand, highest pitch first, until a card's cost is covered. */
-function payFor(s: RulesState, uid: string, choose: Choose): RulesState {
+function payFor(
+  s: RulesState,
+  uid: string,
+  choose: Choose,
+  keep: Selector[] = [],
+): RulesState {
   let next = s;
   const pitchable = s.zones.hand
-    .filter((i) => i.uid !== uid && i.card.pitch !== null)
+    .filter(
+      (i) =>
+        i.uid !== uid &&
+        i.card.pitch !== null &&
+        !keep.some((selector) => fits(i, selector)),
+    )
     .map((i, order) => ({ i, order }))
     .sort((a, b) => b.i.card.pitch! - a.i.card.pitch! || a.order - b.order);
   for (const { i } of pitchable) {
@@ -308,6 +361,12 @@ export function runScriptFromState(
   let state = initial;
   const steps: StepOutcome[] = [];
   const choose = scriptedChoices(script, () => state);
+  const kept = (uid: string) =>
+    state.zones.hand.some(
+      (instance) =>
+        instance.uid === uid &&
+        script.choices?.keep?.some((selector) => fits(instance, selector)),
+    );
 
   /** Tries each candidate in order; the first the rules allow is done. */
   function attempt(
@@ -349,13 +408,20 @@ export function runScriptFromState(
               state,
               step.card,
               step.from ? [step.from] : ["hand", "arsenal", "banished"],
-            ),
-            (s, uid) => playCard(payFor(s, uid, choose), uid, choose),
+            ).filter((uid) => !kept(uid)),
+            (s, uid) =>
+              playCard(
+                payFor(s, uid, choose, script.choices?.keep),
+                uid,
+                choose,
+              ),
           );
           break;
         case "pitch":
-          attempt("pitch", candidates(state, step.card, ["hand"]), (s, uid) =>
-            pitchCard(s, uid, choose),
+          attempt(
+            "pitch",
+            candidates(state, step.card, ["hand"]).filter((uid) => !kept(uid)),
+            (s, uid) => pitchCard(s, uid, choose),
           );
           break;
         case "activateGate":

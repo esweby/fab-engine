@@ -3,7 +3,7 @@
 // a later check; conditions read the state as it stands when they resolve; a choice the rules
 // leave to the player is asked of the caller, from the legal options only.
 import { z } from "zod";
-import type { HeroSide } from "../game.ts";
+import type { HeroSide, Zone } from "../game.ts";
 import {
   createTokens,
   instance,
@@ -260,6 +260,7 @@ export interface ChoiceRequest {
   /** cards: pick ids; confirm: yes or nothing; number: amount; condition: explicit yes or no. */
   kind: "cards" | "confirm" | "number" | "condition";
   condition?: ExplicitCondition;
+  from?: Zone;
   /** Why, in plain words: "Banish a card from hand". */
   prompt: string;
   /** The offered card ids, confirmation or amounts as strings. */
@@ -270,6 +271,10 @@ export interface ChoiceRequest {
   optional: boolean;
   /** The trigger asking, for a confirm (e.g. "viserai-usurper-traverse"). */
   source?: string;
+  paymentContext?: {
+    lifeLost: number;
+    card?: { name: string; pitch: number | null };
+  };
   /** What the card would rather have, for a policy that can't ask (Opt: a pitch on top). */
   prefer?: { pitch?: number };
 }
@@ -484,6 +489,7 @@ export function runEffects(
             const request: ChoiceRequest = {
               kind: "cards",
               prompt: BANISH_FROM[e.from],
+              from: e.from,
               options,
               count,
               optional: !!e.optional,
@@ -554,6 +560,8 @@ export function runEffects(
         break;
       }
       case "payLifeForToken": {
+        const source = bindings.get("self")?.[0];
+        const card = source ? instance(s, source).card : undefined;
         const request: ChoiceRequest = {
           kind: "number",
           prompt: `Pay up to ${e.maximum} life to create that many ${e.token === "runechant" ? "Runechants" : e.token}`,
@@ -562,6 +570,10 @@ export function runEffects(
           ),
           count: 1,
           optional: false,
+          paymentContext: {
+            lifeLost: s.lifeLost,
+            ...(card ? { card: { name: card.name, pitch: card.pitch } } : {}),
+          },
         };
         const chosen = choose(request);
         checkChoice(request, chosen);

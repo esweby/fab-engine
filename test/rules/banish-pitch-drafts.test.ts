@@ -17,6 +17,7 @@ import {
   resolveTriggers,
   runEffects,
   runScript,
+  runScriptFromState,
   setUp,
   VISERAI,
   verifiedRulesFor,
@@ -81,6 +82,170 @@ const chooseLife =
   () => [String(amount)];
 
 describe("paying life for tokens", () => {
+  it("protects newly drawn kept cards from a turn-start hand-banish choice", () => {
+    const initial = game([
+      { ...filler, name: "Keep me" },
+      { ...filler, name: "Other" },
+    ]);
+    const state: RulesState = {
+      ...initial,
+      zones: {
+        ...initial.zones,
+        hand: [],
+        deck: [...initial.zones.hand, ...initial.zones.deck],
+      },
+      triggers: [
+        {
+          id: "start-banish",
+          on: { event: "turnStarted" },
+          effects: [{ op: "banish", from: "hand", amount: 1 }],
+        },
+      ],
+    };
+    const result = runScriptFromState(state, {
+      version: 1,
+      choices: { keep: [{ name: "Keep me" }] },
+      steps: [{ do: "endTurn" }],
+    });
+    expect(
+      result.state.zones.hand.some(
+        (instance) => instance.card.name === "Keep me",
+      ),
+    ).toBe(true);
+    expect(
+      result.state.zones.banished.map((instance) => instance.card.name),
+    ).toEqual(["Other"]);
+  });
+
+  it.each([
+    [21, 3],
+    [20, 2],
+    [18, 0],
+  ])(
+    "rechecks actual resolving life for repeated payments from %i life",
+    (startingLife, expected) => {
+      const state = game([
+        {
+          ...banisher,
+          effects: [payment, payment],
+        },
+      ]);
+      const script: Script = {
+        version: 1,
+        choices: {
+          lifePayment: {
+            card: { name: "Banisher" },
+            startingLife,
+            minimumRemainingLife: 18,
+          },
+        },
+        steps: [{ do: "play", card: { name: "Banisher" } }],
+      };
+      const run = runScriptFromState(state, script);
+      expect(run.steps[0]!.outcome).toBe("done");
+      expect(run.state.lifeLost).toBe(expected);
+    },
+  );
+
+  it("protects explicitly kept cards from playing, pitching and banishing", () => {
+    const state = game([banisher, descendant, shard]);
+    const run = runScriptFromState(state, {
+      version: 1,
+      choices: { keep: [{ name: descendant.name }, { name: shard.name }] },
+      steps: [
+        { do: "play", card: { name: descendant.name } },
+        { do: "pitch", card: { name: shard.name } },
+        { do: "play", card: { name: banisher.name } },
+      ],
+    });
+    expect(run.steps.map((step) => step.outcome)).toEqual([
+      "skipped",
+      "skipped",
+      "done",
+    ]);
+    expect(run.state.zones.hand.map((instance) => instance.card.name)).toEqual([
+      descendant.name,
+      shard.name,
+    ]);
+    expect(
+      run.state.zones.banished.map((instance) => instance.card.name),
+    ).toEqual(["Filler"]);
+  });
+
+  it("does not auto-pitch a kept card to fund another play", () => {
+    const expensive = { ...filler, name: "Expensive", cost: 3 };
+    const state = game([expensive, shard]);
+    const result = runScriptFromState(state, {
+      version: 1,
+      choices: { keep: [{ name: shard.name }] },
+      steps: [{ do: "play", card: { name: expensive.name } }],
+    });
+    expect(result.steps[0]!.outcome).toBe("done");
+    expect(
+      result.state.zones.hand.some(
+        (instance) => instance.card.name === shard.name,
+      ),
+    ).toBe(true);
+    expect(
+      result.trace
+        .filter((event) => event.type === "pitched")
+        .map((event) => event.uid),
+    ).not.toContain(uid(state, shard.name));
+  });
+
+  it("parses bounded payment and kept-card settings without changing their data", () => {
+    const script: Script = {
+      version: 1,
+      choices: {
+        keep: [{ name: shard.name }],
+        lifePayment: {
+          card: { name: descendant.name, pitch: 3 },
+          startingLife: 21,
+          minimumRemainingLife: 18,
+        },
+      },
+      steps: [],
+    };
+    expect(parseScript(script)).toEqual(script);
+    for (const startingLife of [0, -1, 1.5, Infinity]) {
+      expect(() =>
+        parseScript({
+          ...script,
+          choices: {
+            lifePayment: {
+              ...(script.choices!.lifePayment as object),
+              startingLife,
+            },
+          },
+        }),
+      ).toThrow();
+    }
+  });
+
+  it("scopes bounded payments to the named source and subtracts earlier self-loss", () => {
+    const state = {
+      ...game([{ ...banisher, effects: [payment] }]),
+      lifeLost: 2,
+    };
+    for (const [name, expected] of [
+      ["Banisher", 3],
+      ["Other card", 2],
+    ] as const) {
+      const result = runScriptFromState(state, {
+        version: 1,
+        choices: {
+          lifePayment: {
+            card: { name },
+            startingLife: 21,
+            minimumRemainingLife: 18,
+          },
+        },
+        steps: [{ do: "play", card: { name: banisher.name } }],
+      });
+      expect(result.state.lifeLost).toBe(expected);
+    }
+  });
+
   it("validates and describes the bounded choice", () => {
     expect(() => parseEffects([payment])).not.toThrow();
     expect(describeEffects([payment])).toEqual([
