@@ -281,6 +281,7 @@ export interface StepOutcome {
 }
 
 export interface ScriptRun {
+  policyMatches?: Record<string, number>;
   state: RulesState;
   /** Every event, in order: the run's full trace. */
   trace: RulesEvent[];

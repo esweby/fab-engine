@@ -67,6 +67,7 @@ export {
   runBatch,
   type BanishQuery,
   type BatchOptions,
+  type BatchPolicy,
   type BatchReport,
   type BatchSetup,
   type RunSummary,

@@ -3,7 +3,12 @@
 // completed runs; failed runs (the processing budget) are counted apart, never as successes.
 // Every report records its inputs, including a hash of the rules data it ran on.
 import { ENGINE_VERSION, random } from "../index.ts";
-import { runScript, type Script, type Selector } from "./script.ts";
+import {
+  runScript,
+  type Script,
+  type ScriptRun,
+  type Selector,
+} from "./script.ts";
 import type { RulesCard, RulesEvent, RulesSetup } from "./state.ts";
 import type { Trigger } from "./triggers.ts";
 
@@ -34,6 +39,7 @@ export interface TurnRecord {
 }
 
 export interface RunSummary {
+  policyMatches?: Record<string, number>;
   seed: number;
   completed: boolean;
   failure?: string;
@@ -71,14 +77,21 @@ export interface BatchReport {
     engineVersion: string;
     rulesDataVersion: string;
     script: Script;
+    policy?: Pick<BatchPolicy, "id" | "assumptions">;
   };
 }
 
 export type BatchSetup = Omit<RulesSetup, "seed">;
+export interface BatchPolicy {
+  id: string;
+  assumptions: Record<string, string | number | boolean>;
+  run: (setup: RulesSetup, script: Script) => ScriptRun;
+}
 export interface BatchOptions {
   runs: number;
   seed: number;
   queries?: BanishQuery[];
+  policy?: BatchPolicy;
 }
 
 const fits = (card: RulesCard, sel: Selector) =>
@@ -181,11 +194,12 @@ export function runBatch(
   const perRun: RunSummary[] = [];
   for (let n = 0; n < options.runs; n++) {
     const seed = Math.floor(seeds() * 2 ** 31);
-    const run = runScript({ ...setup, seed }, script);
+    const run = (options.policy?.run ?? runScript)({ ...setup, seed }, script);
     const turns = run.failure
       ? []
       : summarise(run.trace, cards, setup.side, queries);
     perRun.push({
+      ...(run.policyMatches ? { policyMatches: { ...run.policyMatches } } : {}),
       seed,
       completed: !run.failure,
       ...(run.failure ? { failure: run.failure } : {}),
@@ -233,6 +247,14 @@ export function runBatch(
         setup.triggers ?? [],
       ),
       script,
+      ...(options.policy
+        ? {
+            policy: {
+              id: options.policy.id,
+              assumptions: { ...options.policy.assumptions },
+            },
+          }
+        : {}),
     },
   };
 }
