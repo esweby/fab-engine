@@ -44,7 +44,7 @@ export interface Selector {
 }
 
 export type ScriptStep =
-  | { do: "play"; card: Selector }
+  | { do: "play"; card: Selector; from?: "hand" | "arsenal" | "banished" }
   | { do: "pitch"; card: Selector }
   | { do: "activateGate"; target: Selector }
   | { do: "attackWithWeapon"; weapon?: Selector }
@@ -79,7 +79,11 @@ const selectorSchema = z.strictObject({
 });
 const stepSchema: z.ZodType<ScriptStep> = z.lazy(() =>
   z.union([
-    z.strictObject({ do: z.literal("play"), card: selectorSchema }),
+    z.strictObject({
+      do: z.literal("play"),
+      card: selectorSchema,
+      from: z.enum(["hand", "arsenal", "banished"]).optional(),
+    }),
     z.strictObject({ do: z.literal("pitch"), card: selectorSchema }),
     z.strictObject({ do: z.literal("activateGate"), target: selectorSchema }),
     z.strictObject({
@@ -341,7 +345,11 @@ export function runScriptFromState(
         case "play":
           attempt(
             "play",
-            candidates(state, step.card, ["hand", "arsenal", "banished"]),
+            candidates(
+              state,
+              step.card,
+              step.from ? [step.from] : ["hand", "arsenal", "banished"],
+            ),
             (s, uid) => playCard(payFor(s, uid, choose), uid, choose),
           );
           break;
@@ -353,7 +361,9 @@ export function runScriptFromState(
         case "activateGate":
           attempt(
             "activateGate",
-            candidates(state, step.target, ["banished"]),
+            candidates(state, step.target, ["banished"]).filter(
+              (uid) => !state.faceDown.includes(uid),
+            ),
             (s, uid) => activateGate(s, uid, choose),
           );
           break;
