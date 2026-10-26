@@ -183,6 +183,19 @@ const malefic = (verses: number): CardRules => ({
   ]),
 });
 
+/** Pull from Beyond: Opt 2, then banish the top card and make a Gate if its pitch matches. */
+const pullFromBeyond = (pitch: number): CardRules => ({
+  effects: parseEffects([
+    { op: "opt", amount: 2, keepPitch: pitch },
+    { op: "banish", from: "deckTop", amount: 1, storeAs: "banished" },
+    {
+      op: "if",
+      check: { pitch, target: "banished" },
+      then: [{ op: "createToken", token: "gate", amount: 1 }],
+    },
+  ]),
+});
+
 /**
  * A sinchant (Runechant of Envy, Gluttony and so on): "When this is destroyed, create a Runechant
  * token. At the beginning of your action phase or when you play an attack action card, destroy
@@ -223,6 +236,39 @@ const SINCHANTS = [
 
 /** Verified effects by card name. A card not here is unmodelled: the engine won't play it. */
 export const CARD_RULES: Record<string, CardRules> = {
+  // Accepted by the maintainer, 26 Oct 2026. All three pitches share this reading.
+  "Embrace Ursur": {
+    effects: [],
+    triggers: parseTriggers([
+      {
+        id: "embrace-ursur-attacks",
+        on: { event: "attacking", self: true },
+        effects: [
+          {
+            op: "banish",
+            from: "hand",
+            amount: 1,
+            optional: true,
+            storeAs: "banished",
+          },
+          {
+            op: "if",
+            check: { has: "runeblade", target: "banished" },
+            then: [{ op: "createToken", token: "runechant", amount: 1 }],
+          },
+          {
+            op: "if",
+            check: { has: "shadow", target: "banished" },
+            then: [{ op: "grantGoAgain", target: "self" }],
+          },
+        ],
+      },
+    ]),
+  },
+  // Accepted by the maintainer, 26 Oct 2026. Their combat-chain effects remain out of scope.
+  "Widespread Annihilation": { effects: [] },
+  "Widespread Destruction": { effects: [] },
+  "Widespread Ruin": { effects: [] },
   // "Banish a card from your hand. If it's Runeblade, create a Runechant token. If it's Shadow,
   // create a Gate to i'Arathael token. Go again"
   "Become the Shadow Lord": {
@@ -539,6 +585,12 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  // Accepted by the maintainer, 26 Oct 2026. The Gate checks this card's own pitch.
+  "Pull from Beyond": {
+    1: pullFromBeyond(1),
+    2: pullFromBeyond(2),
+    3: pullFromBeyond(3),
+  },
   Cull: {
     1: {
       effects: parseEffects([{ op: "banish", from: "hand", amount: 1 }]),
