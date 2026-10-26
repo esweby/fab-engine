@@ -58,6 +58,7 @@ export interface Script {
   choices?: {
     /** When a card must be banished from hand: the first of these that fits, in order. */
     banish?: Selector[];
+    neverBanish?: Selector[];
     keep?: Selector[];
     /** UNVERIFIED policy: explicit search preferences, otherwise lowest pitch first. */
     search?: Selector[];
@@ -120,6 +121,7 @@ const scriptSchema = z.strictObject({
   choices: z
     .strictObject({
       banish: z.array(selectorSchema).max(20).optional(),
+      neverBanish: z.array(selectorSchema).max(20).optional(),
       keep: z.array(selectorSchema).max(20).optional(),
       search: z.array(selectorSchema).max(20).optional(),
       optional: z.record(text, z.boolean()).optional(),
@@ -290,6 +292,14 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
         (instance) =>
           request.from !== "hand" ||
           !script.choices?.keep?.some((selector) => fits(instance, selector)),
+      )
+      .filter(
+        (instance) =>
+          request.from !== "hand" ||
+          !request.prompt.startsWith("Banish") ||
+          !script.choices?.neverBanish?.some((selector) =>
+            fits(instance, selector),
+          ),
       );
     const preferred = request.prompt.startsWith("Banish")
       ? (script.choices?.banish ?? [])
@@ -302,7 +312,11 @@ function scriptedChoices(script: Script, current: () => RulesState): Choose {
         (a, b) => (a.card.pitch ?? Infinity) - (b.card.pitch ?? Infinity),
       ),
     ];
-    return [...new Set(ranked.map((i) => i.uid))].slice(0, request.count);
+    const chosen = [...new Set(ranked.map((i) => i.uid))].slice(
+      0,
+      request.count,
+    );
+    return request.optional && chosen.length < request.count ? [] : chosen;
   };
 }
 
