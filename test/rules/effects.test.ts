@@ -78,6 +78,25 @@ describe("the effect schema", () => {
       ]),
     ).toThrow('Binding "banished" is used before it is set.');
   });
+
+  it("checks the pitch of a card banished from the top of the deck", () => {
+    const state = game(
+      card("H1"),
+      card("H2"),
+      card("H3"),
+      card("H4"),
+      card("Blue", { pitch: 3 }),
+    );
+    const effects = parseEffects([
+      { op: "banish", from: "deckTop", amount: 1, storeAs: "banished" },
+      {
+        op: "if",
+        check: { pitch: 3, target: "banished" },
+        then: [{ op: "createToken", token: "gate", amount: 1 }],
+      },
+    ]);
+    expect(runEffects(state, effects, () => []).tokens.gate).toBe(1);
+  });
 });
 
 describe("running effects", () => {

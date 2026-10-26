@@ -27,6 +27,7 @@ const tokens = (token: string, n: number) => {
 
 function check(c: Check): string {
   if ("playedFromBanish" in c) return "this was played from the banished zone";
+  if ("pitch" in c) return `that card has pitch ${c.pitch}`;
   if ("damageDealtThisTurn" in c)
     return c.damageDealtThisTurn === 1
       ? "you've dealt damage to the defending hero this turn"

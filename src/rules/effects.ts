@@ -29,6 +29,7 @@ export const CONDITION_TEXT: Record<ExplicitCondition, string> = {
 export type Check =
   /** A card bound earlier has this trait (class, talent or fact, e.g. "shadow"). */
   | { has: string; target: string }
+  | { pitch: number; target: string }
   | { createdThisTurn: string; atLeast: number }
   | { activatedThisTurn: string; atLeast: number }
   | { damageDealtThisTurn: number }
@@ -103,6 +104,7 @@ const amount = z.number().int().min(1).max(20);
 export const checkSchema: z.ZodType<Check> = z.lazy(() =>
   z.union([
     z.strictObject({ has: name, target: name }),
+    z.strictObject({ pitch: z.number().int().min(1).max(3), target: name }),
     z.strictObject({
       createdThisTurn: name,
       atLeast: z.number().int().min(0),
@@ -367,6 +369,10 @@ export function holds(
   if ("has" in check)
     return (bindings.get(check.target) ?? []).some((uid) =>
       instance(s, uid).card.traits.includes(check.has),
+    );
+  if ("pitch" in check && "target" in check)
+    return (bindings.get(check.target) ?? []).some(
+      (uid) => instance(s, uid).card.pitch === check.pitch,
     );
   if ("createdThisTurn" in check)
     return (s.createdThisTurn[check.createdThisTurn] ?? 0) >= check.atLeast;
