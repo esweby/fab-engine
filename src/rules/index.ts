@@ -61,6 +61,13 @@ export {
   type StepOutcome,
 } from "./script.ts";
 export {
+  measureBslGateBloodDebt,
+  chainSpeedDistribution,
+  type ChainSpeedDistribution,
+  type BslGateBloodDebtMatch,
+  type ChainDelay,
+} from "./chain-speed.ts";
+export {
   compareBatches,
   coverage,
   rulesDataVersion,
@@ -76,6 +83,9 @@ export {
 } from "./batch.ts";
 export {
   compare,
+  compareChainSpeed,
+  type ChainSpeedCheck,
+  type ChainSpeedComparison,
   dist,
   firstTraverseOf,
   ksDistance,

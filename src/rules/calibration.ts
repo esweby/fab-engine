@@ -4,6 +4,11 @@
 // (T1–T5, 21 Oct 2026) and never move; T6 waits for approval and is only checked when asked for.
 // A divergence means investigating a missing rule, a scripted decision or the data.
 import type { BatchReport } from "./batch.ts";
+import {
+  validateChainSpeed,
+  type ChainDelay,
+  type ChainSpeedDistribution,
+} from "./chain-speed.ts";
 
 /** Whole numbers: counts[v] had value v. Percentiles are nearest-rank, as in the Go side. */
 export interface Dist {
@@ -69,6 +74,67 @@ export const MIN_OBSERVED = 200;
 export const MIN_SIMULATED = 1000;
 const GAP = 0.15;
 const SHARE_GAP = 0.1;
+
+export interface ChainSpeedCheck {
+  threshold: "T5";
+  delay: ChainDelay;
+  verdict: Verdict;
+  observed?: number;
+  simulated?: number;
+  gap?: number;
+}
+
+export interface ChainSpeedComparison {
+  status: "not run" | "compared";
+  reason?: string;
+  checks: ChainSpeedCheck[];
+}
+
+export function compareChainSpeed(
+  observed: ChainSpeedDistribution,
+  simulated: ChainSpeedDistribution,
+  script: { activatesGates: boolean; review: "approved" | "unverified" },
+): ChainSpeedComparison {
+  validateChainSpeed(observed);
+  validateChainSpeed(simulated);
+  if (!script.activatesGates || script.review !== "approved")
+    return {
+      status: "not run",
+      checks: [],
+      reason: !script.activatesGates
+        ? "T5 requires a script that activates Gates."
+        : "T5 requires an approved Gate script.",
+    };
+  const enough =
+    observed.population >= MIN_OBSERVED &&
+    simulated.population >= MIN_SIMULATED &&
+    observed.reached[3] > 0 &&
+    simulated.reached[3] > 0;
+  return {
+    status: "compared",
+    checks: ([0, 1, 2] as const).map((delay) => {
+      if (!enough)
+        return { threshold: "T5", delay, verdict: "not enough data" };
+      const observedShare = observed.by_delay[delay] / observed.reached[3];
+      const simulatedShare = simulated.by_delay[delay] / simulated.reached[3];
+      const crossGap = Math.abs(
+        simulated.by_delay[delay] * observed.reached[3] -
+          observed.by_delay[delay] * simulated.reached[3],
+      );
+      return {
+        threshold: "T5",
+        delay,
+        observed: observedShare,
+        simulated: simulatedShare,
+        gap: crossGap / (observed.reached[3] * simulated.reached[3]),
+        verdict:
+          crossGap * 10 > observed.reached[3] * simulated.reached[3]
+            ? "investigate"
+            : "within",
+      };
+    }),
+  };
+}
 
 export function dist(xs: number[]): Dist {
   if (xs.length === 0)

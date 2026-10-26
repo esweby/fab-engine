@@ -11,6 +11,10 @@ import {
 } from "./script.ts";
 import type { RulesCard, RulesEvent, RulesSetup } from "./state.ts";
 import type { Trigger } from "./triggers.ts";
+import {
+  measureBslGateBloodDebt,
+  type BslGateBloodDebtMatch,
+} from "./chain-speed.ts";
 
 /** A banished-zone question, asked at the end of every turn. */
 export interface BanishQuery {
@@ -39,6 +43,7 @@ export interface TurnRecord {
 }
 
 export interface RunSummary {
+  bslGateBloodDebt?: BslGateBloodDebtMatch;
   policyMatches?: Record<string, number>;
   seed: number;
   completed: boolean;
@@ -78,6 +83,7 @@ export interface BatchReport {
     rulesDataVersion: string;
     script: Script;
     policy?: Pick<BatchPolicy, "id" | "assumptions">;
+    measureBslGateBloodDebt?: true;
   };
 }
 
@@ -88,6 +94,7 @@ export interface BatchPolicy {
   run: (setup: RulesSetup, script: Script) => ScriptRun;
 }
 export interface BatchOptions {
+  measureBslGateBloodDebt?: boolean;
   runs: number;
   seed: number;
   queries?: BanishQuery[];
@@ -199,6 +206,9 @@ export function runBatch(
       ? []
       : summarise(run.trace, cards, setup.side, queries);
     perRun.push({
+      ...(options.measureBslGateBloodDebt && !run.failure
+        ? { bslGateBloodDebt: measureBslGateBloodDebt(run.trace, cards) }
+        : {}),
       ...(run.policyMatches ? { policyMatches: { ...run.policyMatches } } : {}),
       seed,
       completed: !run.failure,
@@ -247,6 +257,9 @@ export function runBatch(
         setup.triggers ?? [],
       ),
       script,
+      ...(options.measureBslGateBloodDebt
+        ? { measureBslGateBloodDebt: true as const }
+        : {}),
       ...(options.policy
         ? {
             policy: {
