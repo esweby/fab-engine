@@ -617,6 +617,15 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  // Accepted by the maintainer, 27 Oct 2026. Damage prevention remains outside the engine.
+  "Fallen Herald": {
+    2: activated("instant", 0, "banish_from_hand"),
+  },
+  "Haunting Rendition": {
+    1: activated("instant", 0, "discard", [
+      { op: "createToken", token: "runechant", amount: 1 },
+    ]),
+  },
   "Become the Arknight": {
     3: { effects: [], costReductions: [{ amount: "perRunechant" }] },
   },
