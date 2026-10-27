@@ -236,6 +236,14 @@ const SINCHANTS = [
 
 /** Verified effects by card name. A card not here is unmodelled: the engine won't play it. */
 export const CARD_RULES: Record<string, CardRules> = {
+  "Deadwood Dirge": { effects: [] },
+  "Enshrine Sin": {
+    effects: parseEffects([
+      { op: "opt", amount: 1 },
+      { op: "createToken", token: "runechant", amount: 1 },
+    ]),
+    playableFromBanish: true,
+  },
   // Accepted by the maintainer, 26 Oct 2026. All three pitches share this reading.
   "Embrace Ursur": {
     effects: [],
@@ -265,6 +273,30 @@ export const CARD_RULES: Record<string, CardRules> = {
       },
     ]),
   },
+  "Shadowrealm Walker": {
+    effects: [],
+    triggers: parseTriggers([
+      {
+        id: "shadowrealm-walker-attacks",
+        on: { event: "attacking", self: true },
+        effects: [
+          {
+            op: "banish",
+            from: "hand",
+            amount: 1,
+            optional: true,
+            storeAs: "banished",
+          },
+          {
+            op: "if",
+            check: { has: "shadow", target: "banished" },
+            then: [{ op: "createToken", token: "gate", amount: 1 }],
+          },
+        ],
+      },
+    ]),
+  },
+  "Vantom Wraith": { effects: [] },
   // Accepted by the maintainer, 26 Oct 2026. Their combat-chain effects remain out of scope.
   "Widespread Annihilation": { effects: [] },
   "Widespread Destruction": { effects: [] },
@@ -585,12 +617,44 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  "Become the Arknight": {
+    3: { effects: [], costReductions: [{ amount: "perRunechant" }] },
+  },
+  "Mordred Tide": { 1: { effects: [] } },
+  "Open the Gate to i'Arathael": {
+    1: {
+      effects: [],
+      triggers: parseTriggers([
+        {
+          id: "open-the-gate-to-i-arathael-banished",
+          on: { event: "moved", to: "banished", self: true },
+          effects: [{ op: "createToken", token: "gate", amount: 1 }],
+        },
+      ]),
+    },
+  },
   // Accepted by the maintainer, 26 Oct 2026. The Gate checks this card's own pitch.
   "Pull from Beyond": {
     1: pullFromBeyond(1),
     2: pullFromBeyond(2),
     3: pullFromBeyond(3),
   },
+  "Revel in Runeblood": { 1: { effects: [] } },
+  "Shadow of Ursur": {
+    3: {
+      effects: parseEffects([
+        {
+          op: "banish",
+          from: "hand",
+          amount: 1,
+          optional: true,
+          storeAs: "banished",
+        },
+      ]),
+      playableFromBanish: true,
+    },
+  },
+  "Succumb to Temptation": { 2: { effects: [] } },
   Cull: {
     1: {
       effects: parseEffects([{ op: "banish", from: "hand", amount: 1 }]),
