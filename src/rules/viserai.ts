@@ -236,6 +236,14 @@ const SINCHANTS = [
 
 /** Verified effects by card name. A card not here is unmodelled: the engine won't play it. */
 export const CARD_RULES: Record<string, CardRules> = {
+  // Accepted by the maintainer, 27 Oct 2026. These are the exact reviewed setup drafts.
+  "Runic Reaving": {
+    ...activated("instant", 0, "discard", [
+      { op: "createToken", token: "runechant", amount: 1 },
+    ]),
+    usurp: true,
+  },
+  "Vantom Banshee": { effects: [] },
   "Deadwood Dirge": { effects: [] },
   "Enshrine Sin": {
     effects: parseEffects([
@@ -617,6 +625,63 @@ export const CARD_RULES: Record<string, CardRules> = {
 
 /** Rules that differ by pitch (1 red, 2 yellow, 3 blue). */
 const BY_PITCH: Record<string, Record<number, CardRules>> = {
+  // Accepted by the maintainer, 27 Oct 2026. Unsupported parts remain documented in the drafts.
+  "Funeral Moon": {
+    1: {
+      effects: parseEffects([
+        { op: "createToken", token: "runechant", amount: 1 },
+      ]),
+      instantWhen: "hero_lost_life_this_turn",
+      playableFromBanish: true,
+    },
+  },
+  "Invert Existence": {
+    3: { effects: [], playableFromBanish: true },
+  },
+  "Painful Passage": {
+    1: {
+      effects: parseEffects([
+        {
+          op: "banish",
+          from: "hand",
+          amount: 1,
+          optional: true,
+          storeAs: "banished",
+        },
+      ]),
+    },
+  },
+  "Rattle Bones": {
+    1: {
+      effects: parseEffects([{ op: "banish", from: "graveyard", amount: 1 }]),
+    },
+  },
+  "Seeds of Agony": {
+    3: { effects: [], playableFromBanish: true },
+  },
+  "Shadowrealm Ripper": {
+    1: {
+      effects: [],
+      triggers: parseTriggers([
+        {
+          id: "shadowrealm-ripper-attacks",
+          on: { event: "attacking", self: true },
+          effects: [
+            {
+              op: "banish",
+              from: "hand",
+              amount: 1,
+              optional: true,
+              storeAs: "banished",
+            },
+          ],
+        },
+      ]),
+    },
+  },
+  "Sonata Galaxia": {
+    1: { effects: [], costReductions: [{ amount: "perRunechant" }] },
+  },
   // Accepted by the maintainer, 27 Oct 2026. Damage prevention remains outside the engine.
   "Fallen Herald": {
     2: activated("instant", 0, "banish_from_hand"),
