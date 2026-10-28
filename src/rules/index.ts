@@ -116,3 +116,14 @@ export {
   type TurnSearchLimits,
   type TurnSearchOptions,
 } from "./search.ts";
+export {
+  chooseLine,
+  DEFAULT_LINE_SCORE_SETTINGS,
+  objectivePolicy,
+  pickLine,
+  playByObjectives,
+  scoreLine,
+  type LineScoreSettings,
+  type ObjectivePlayOptions,
+  type ObjectiveRun,
+} from "./objectives.ts";

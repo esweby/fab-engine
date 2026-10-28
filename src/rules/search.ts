@@ -63,6 +63,8 @@ export interface TurnLine {
   back: boolean;
   /** Cards played: from hand, arsenal or banish (not weapons, abilities or Gates). */
   width: number;
+  /** Hand cards held at the end of the turn, before the draw: blockers kept back. */
+  held: number;
   /** Life lost this turn (blood debt, Descendancy). */
   lifeLost: number;
   /** After the end of the turn: the next turn's action phase, its hand drawn. */
@@ -409,7 +411,10 @@ function summarise(
   const banishedAfter = new Set<string>();
   const leftArena = new Set<string>();
   const enteredArena = new Set<string>();
+  const leftHand = new Set<string>();
+  const enteredHand = new Set<string>();
   for (const e of after) {
+    if (e.type === "drew") for (const uid of e.uids) enteredHand.add(uid);
     if (e.type === "tokensCreated" && e.token === "runechant")
       runechants -= e.amount;
     if (e.type === "tokensRemoved" && e.token === "runechant")
@@ -418,12 +423,17 @@ function summarise(
       if (e.to === "banished") banishedAfter.add(e.uid);
       if (e.from === "arena") leftArena.add(e.uid);
       if (e.to === "arena") enteredArena.add(e.uid);
+      if (e.from === "hand") leftHand.add(e.uid);
+      if (e.to === "hand") enteredHand.add(e.uid);
     }
   }
   const arenaAtEnd = [
     ...final.zones.arena.map((i) => i.uid).filter((u) => !enteredArena.has(u)),
     ...leftArena,
   ];
+  const held =
+    final.zones.hand.filter((i) => !enteredHand.has(i.uid)).length +
+    [...leftHand].filter((uid) => !enteredHand.has(uid)).length;
   const m = metrics(events.slice(0, ended), cards);
   const banishedPlayable = final.zones.banished.filter(
     (i) =>
@@ -435,7 +445,7 @@ function summarise(
     const card = cards.get(u);
     return !!card && isRunechantAura(card);
   }).length;
-  const result = { ...m, runechants, sinchants, banishedPlayable };
+  const result = { ...m, runechants, sinchants, banishedPlayable, held };
   return {
     actions,
     ...result,

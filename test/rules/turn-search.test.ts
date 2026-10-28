@@ -145,6 +145,23 @@ describe("searchTurn", () => {
     expect(stats.truncated).toBe("lines");
   });
 
+  it("counts the hand cards held at the end of the turn, before the draw", () => {
+    const s = start({ hand: [BSL(), MURMURING(1)] });
+    const { lines } = searchTurn(s);
+    // Ending at once holds both; arsenalling one holds the other.
+    expect(
+      lines.find(
+        (l) => l.actions.length === 1 && !("arsenal" in l.actions[0]!),
+      )!.held,
+    ).toBe(2);
+    expect(
+      lines.find((l) => l.actions.length === 1 && "arsenal" in l.actions[0]!)!
+        .held,
+    ).toBe(1);
+    // BSL pitched for Murmuring: nothing held.
+    expect(lines.find((l) => l.threatened === 4)!.held).toBe(0);
+  });
+
   it("branches on traversing back to the Forsaken in the end phase", () => {
     const s = start({ hand: [BSL(), MURMURING(1)], side: "usurper" });
     const { lines } = searchTurn(s);
