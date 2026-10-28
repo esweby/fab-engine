@@ -108,3 +108,11 @@ export {
   type SessionAction,
 } from "./session.ts";
 export { describeCheck, describeEffects } from "./describe.ts";
+export {
+  replayLine,
+  searchTurn,
+  type TurnLine,
+  type TurnSearch,
+  type TurnSearchLimits,
+  type TurnSearchOptions,
+} from "./search.ts";
