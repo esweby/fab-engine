@@ -1,13 +1,42 @@
 {
-  "name": "@vdb/engine",
-  "private": true,
+  "name": "@esweby/fab-engine",
+  "version": "0.1.0",
+  "description": "A Flesh and Blood rules engine: goldfish turns, turn search and line scoring.",
+  "license": "MIT",
+  "repository": "github:esweby/fab-engine",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./rulesets/viseraiTraverse": "./src/rulesets/viseraiTraverse.ts",
-    "./rules": "./src/rules/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./rules": {
+      "types": "./dist/rules/index.d.ts",
+      "default": "./dist/rules/index.js"
+    },
+    "./rulesets/viseraiTraverse": {
+      "types": "./dist/rulesets/viseraiTraverse.d.ts",
+      "default": "./dist/rulesets/viseraiTraverse.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
   }
 }
