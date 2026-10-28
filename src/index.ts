@@ -382,7 +382,13 @@ function tableByTurn(
 export function runScenario(
   definition: ScenarioDefinition,
   deck: Deck,
-  options: { runs: number; seed: number; handSize?: number },
+  options: {
+    runs: number;
+    seed: number;
+    handSize?: number;
+    /** Called with each run's outcome, in order, so two decks run on one seed can be paired. */
+    onRun?: (success: boolean) => void;
+  },
 ): ScenarioResult {
   const def = scenarioSchema.parse(definition);
   const handSize = options.handSize ?? 4;
@@ -420,7 +426,9 @@ export function runScenario(
       if (evaluate(def.condition, cards, new Set())) successByTurn[t]!++;
     });
     const falseBlocks = new Set<string>();
-    if (evaluate(def.condition, visible[turns - 1]!, falseBlocks)) successes++;
+    const success = evaluate(def.condition, visible[turns - 1]!, falseBlocks);
+    options.onRun?.(success);
+    if (success) successes++;
     else {
       if (failedSeeds.length < FAILED_SEEDS) failedSeeds.push(runSeed);
       for (const label of falseBlocks) {

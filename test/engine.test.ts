@@ -96,6 +96,18 @@ describe("runScenario", () => {
     expect(r.successRate).toBeLessThan(0.21);
   });
 
+  it("reports each run's outcome when asked, so two decks can be paired run by run", () => {
+    const deck = buildDeck([{ card: card("A"), copies: 3 }], 60);
+    const outcomes: boolean[] = [];
+    const r = runScenario(scenario(), deck, {
+      runs: 500,
+      seed: 9,
+      onRun: (success) => outcomes.push(success),
+    });
+    expect(outcomes).toHaveLength(500);
+    expect(outcomes.filter(Boolean).length / 500).toBe(r.successRate);
+  });
+
   it("is reproducible from its seed", () => {
     const deck = buildDeck([{ card: card("A"), copies: 3 }], 60);
     expect(runScenario(scenario(), deck, { runs: 500, seed: 9 })).toEqual(
