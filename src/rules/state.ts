@@ -107,6 +107,8 @@ export type RulesEvent =
   /** Damage dealt, noted by hand in goldfish (combat is out of scope). */
   | { type: "damageNoted"; amount: number }
   | { type: "shuffled" }
+  /** A card banished from the top of the deck; blind when the player didn't know it. */
+  | { type: "revealed"; uid: string; blind: boolean }
   /** An attack noted by hand, with a weapon the engine can't attack with yet. */
   | { type: "attackNoted"; uid: string }
   | { type: "turnEnded"; turn: number }
@@ -146,6 +148,20 @@ export interface RulesState {
   triggers: Trigger[];
   /** Most triggers one action may resolve: a safeguard against loops, not a game rule. */
   budget: number;
+  /**
+   * How many cards on top of the deck the player knows, in order: those Opt kept on top or a
+   * card put there. Missing means none.
+   */
+  knownTop?: number;
+  /**
+   * For the turn search only: the deck's order is hidden, so a blind reveal banishes an unknown
+   * card instead of the real one (docs/turn-search.md, "The top of the deck").
+   */
+  hiddenDeck?: boolean;
+  /** The real cards behind unknown ones, still unseen, so later reveals count them. */
+  hiddenCards?: RulesInstance[];
+  /** For each unknown card: the share of the unseen cards it could be that are each kind. */
+  unknownOdds?: Record<string, { playable: number; bloodDebt: number }>;
 }
 
 /** Something the rules don't allow; the state is left as it was. */
@@ -199,6 +215,7 @@ export function draw(s: RulesState, count: number): RulesState {
         deck: s.zones.deck.slice(drawn.length),
         hand: [...s.zones.hand, ...drawn],
       },
+      knownTop: Math.max(0, (s.knownTop ?? 0) - drawn.length),
     },
     { type: "drew", uids: drawn.map((i) => i.uid) },
   );
@@ -301,9 +318,18 @@ export function moveCard(
       ? [moving, ...zones[to]]
       : [...zones[to], moving];
   const faceDown = !!options.faceDown;
+  // A card the player puts on top is one they know; one taken from the top no longer is.
+  const known = s.knownTop ?? 0;
+  const knownTop =
+    to === "deck" && options.position === "top"
+      ? known + 1
+      : from === "deck" && s.zones.deck[0]?.uid === uid
+        ? Math.max(0, known - 1)
+        : known;
   return withEvents(
     {
       ...s,
+      ...(knownTop !== known ? { knownTop } : {}),
       zones,
       faceDown: faceDown
         ? [...s.faceDown.filter((u) => u !== uid), uid]
@@ -326,6 +352,7 @@ export function shuffleDeck(s: RulesState): RulesState {
         ...s.zones,
         deck: shuffle(s.zones.deck, s.seed * 31 + before + 1),
       },
+      knownTop: 0,
     },
     { type: "shuffled" },
   );
@@ -455,4 +482,47 @@ export function checkInvariants(s: RulesState): void {
     if (n < 0) throw new RulesError(`Counters on ${uid} below zero.`);
   for (const uid of s.faceDown)
     if (!seen.has(uid)) throw new RulesError(`Face-down card ${uid} is gone.`);
+}
+
+/** What the search banishes for a blind reveal: a card it can't know, so can't play. */
+const UNKNOWN_CARD: RulesCard = {
+  id: "unknown",
+  name: "Unknown card",
+  pitch: null,
+  cost: null,
+  goAgain: false,
+  type: "action",
+  roles: [],
+  traits: [],
+  amounts: {},
+};
+
+/** An unknown card the search banished for a blind reveal. */
+export const isUnknown = (uid: string) => uid.startsWith("unknown-");
+
+/**
+ * Puts an unknown card on top of the deck in place of the real one, which joins the unseen cards
+ * behind it. Its odds are over every card the player hasn't seen: the deck and the real cards
+ * behind earlier unknown ones.
+ */
+export function hideTop(s: RulesState): RulesState {
+  const [top, ...rest] = s.zones.deck;
+  if (!top) return s;
+  const hiddenCards = s.hiddenCards ?? [];
+  const unseen = [...s.zones.deck, ...hiddenCards];
+  const share = (f: (card: RulesCard) => boolean) =>
+    unseen.filter((i) => f(i.card)).length / unseen.length;
+  const uid = `unknown-${hiddenCards.length}`;
+  return {
+    ...s,
+    zones: { ...s.zones, deck: [{ uid, card: UNKNOWN_CARD }, ...rest] },
+    hiddenCards: [...hiddenCards, top],
+    unknownOdds: {
+      ...s.unknownOdds,
+      [uid]: {
+        playable: share((card) => !!card.playableFromBanish),
+        bloodDebt: share((card) => card.traits.includes("blood_debt")),
+      },
+    },
+  };
 }

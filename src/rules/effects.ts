@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { HeroSide, Zone } from "../game.ts";
 import {
   createTokens,
+  hideTop,
   instance,
   isRunechantAura,
   moveCard,
@@ -486,7 +487,18 @@ export function runEffects(
       case "banish": {
         let chosen: string[];
         if (e.from === "deckTop") {
-          chosen = s.zones.deck.slice(0, e.amount).map((i) => i.uid);
+          chosen = [];
+          for (let n = 0; n < e.amount && s.zones.deck.length > 0; n++) {
+            const blind = (s.knownTop ?? 0) === 0;
+            // The search can't see a card the player doesn't know (docs/turn-search.md).
+            if (blind && s.hiddenDeck) s = hideTop(s);
+            const uid = s.zones.deck[0]!.uid;
+            s = withEvents(s, { type: "revealed", uid, blind });
+            s = moveCard(s, uid, "banished", { faceDown: e.faceDown });
+            chosen.push(uid);
+          }
+          if (e.storeAs) bindings.set(e.storeAs, chosen);
+          break;
         } else {
           const options = s.zones[e.from].map((i) => i.uid);
           const count = Math.min(e.amount, options.length);
@@ -528,6 +540,8 @@ export function runEffects(
           s = moveCard(s, chosen[0]!, "deck", { position: "bottom" });
           looking = looking.filter((uid) => uid !== chosen[0]);
         }
+        // The cards kept on top are known, in order (the maintainer, 29 Oct 2026).
+        s = { ...s, knownTop: looking.length };
         break;
       }
       case "createToken":

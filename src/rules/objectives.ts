@@ -9,7 +9,18 @@
 // blockers to hold back (no default).
 import type { BatchPolicy } from "./batch.ts";
 import type { ScriptRun } from "./script.ts";
-import { searchTurn, type TurnLine, type TurnSearchOptions } from "./search.ts";
+import {
+  answerSets,
+  replayLine,
+  searchTurn,
+  type TurnLine,
+  type TurnSearchOptions,
+} from "./search.ts";
+import {
+  applySessionAction,
+  NeedsChoice,
+  type SessionAction,
+} from "./session.ts";
 import { RulesError, setUp, type RulesState } from "./state.ts";
 
 export interface LineScoreSettings {
@@ -122,7 +133,63 @@ export interface ObjectiveRun extends ScriptRun {
   lines: TurnLine[];
 }
 
-/** Plays `turns` turns from an action phase, each with the line chooseLine picks. */
+const blindRevealsIn = (s: RulesState, since: number) =>
+  s.events.slice(since).filter((e) => e.type === "revealed" && e.blind).length;
+
+/**
+ * One turn with the deck hidden (docs/turn-search.md, "The top of the deck"): the best line is
+ * played on the real state up to its first blind reveal, and then the turn is searched again
+ * from there, with the real card known. The turn's line is what was really played.
+ */
+function playHiddenTurn(
+  start: RulesState,
+  settings: LineScoreSettings | undefined,
+  search: TurnSearchOptions,
+): TurnLine {
+  const since = start.events.length;
+  const actions: SessionAction[] = [];
+  let state = start;
+  for (let replanned = true; replanned;) {
+    replanned = false;
+    const line = chooseLine(state, settings, { ...search, since });
+    for (const planned of line.actions) {
+      const before = blindRevealsIn(state, since);
+      let action = planned;
+      try {
+        state = applySessionAction(state, action);
+      } catch (e) {
+        // The real card asks what the unknown one didn't, so the planned answers may be missing
+        // or out of step: answer as best for the rest of the turn, now that the card is known.
+        if (!(e instanceof NeedsChoice || e instanceof RulesError)) throw e;
+        const options = answerSets(state, planned, search);
+        if (options.length === 0) throw e;
+        const scored = options.map((o) => ({
+          ...o,
+          score: scoreLine(
+            o.action.type === "endTurn"
+              ? replayLine(start, [...actions, o.action])
+              : chooseLine(o.state, settings, { ...search, since }),
+            settings,
+          ),
+        }));
+        const best = scored.reduce((a, b) => (b.score > a.score ? b : a));
+        state = best.state;
+        action = best.action;
+      }
+      actions.push(action);
+      if (action.type !== "endTurn" && blindRevealsIn(state, since) > before) {
+        replanned = true;
+        break;
+      }
+    }
+  }
+  return replayLine(start, actions);
+}
+
+/**
+ * Plays `turns` turns from an action phase, each with the line chooseLine picks. With the deck
+ * hidden, each turn is planned again after every blind reveal.
+ */
 export function playByObjectives(
   initial: RulesState,
   options: ObjectivePlayOptions,
@@ -131,7 +198,10 @@ export function playByObjectives(
   const lines: TurnLine[] = [];
   try {
     for (let turn = 0; turn < options.turns; turn++) {
-      const line = chooseLine(state, options.settings, options.search);
+      const line =
+        options.search?.deck === "hidden"
+          ? playHiddenTurn(state, options.settings, options.search)
+          : chooseLine(state, options.settings, options.search);
       lines.push(line);
       state = line.state;
     }
@@ -151,14 +221,16 @@ export function playByObjectives(
 /** The line chooser as a batch policy, so it runs on the same seeds as a script. */
 export function objectivePolicy(options: ObjectivePlayOptions): BatchPolicy {
   const settings = options.settings ?? DEFAULT_LINE_SCORE_SETTINGS;
+  const hidden = options.search?.deck === "hidden";
   return {
-    id: "line-scoring-v1",
+    id: hidden ? "line-scoring-hidden-v1" : "line-scoring-v1",
     assumptions: {
       label: "Assumed",
       strategy:
         "UNVERIFIED: every legal line each turn, scored on damage, burst, what it leaves, flipping, coming back and width",
       turns: options.turns,
       settings: JSON.stringify(settings),
+      deck: hidden ? "hidden" : "known",
     },
     run: (setup) => playByObjectives(setUp(setup), options),
   };
