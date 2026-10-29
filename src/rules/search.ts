@@ -41,6 +41,18 @@ export interface TurnSearchOptions {
    */
   conditions?: Partial<Record<ExplicitCondition, boolean>>;
   limits?: Partial<TurnSearchLimits>;
+  /**
+   * "known" (the default) searches the real deck order, so it knows what a banish from the top
+   * takes. "hidden" doesn't: a blind reveal banishes an unknown card, scored by what it could be
+   * (docs/turn-search.md, "The top of the deck"). A hidden line's state has unknown cards in it,
+   * so play its actions on the real state rather than using its state.
+   */
+  deck?: "known" | "hidden";
+  /**
+   * Where the turn began, as an index into the start state's events, when the search starts part
+   * way through it: the line's numbers then count the whole turn. Defaults to the start.
+   */
+  since?: number;
 }
 
 /** One line: its actions (replayable with applySessionAction) and what it leaves. */
@@ -55,7 +67,7 @@ export interface TurnLine {
   runechants: number;
   /** Runechant auras (sinchants) in the arena at the end of the turn. */
   sinchants: number;
-  /** Face-up cards in banish that may be played from there. */
+  /** Face-up cards in banish that may be played from there; an unknown card by its odds. */
   banishedPlayable: number;
   /** Traversed to the Usurper this turn. */
   flipped: boolean;
@@ -65,8 +77,10 @@ export interface TurnLine {
   width: number;
   /** Hand cards held at the end of the turn, before the draw: blockers kept back. */
   held: number;
-  /** Life lost this turn (blood debt, Descendancy). */
+  /** Life lost this turn (blood debt, Descendancy); an unknown card's blood debt by its odds. */
   lifeLost: number;
+  /** Banishes from the top of the deck that the player didn't know (Forsaken, Pull, Tribute). */
+  blindReveals: number;
   /** After the end of the turn: the next turn's action phase, its hand drawn. */
   state: RulesState;
   /** Equal for lines with the same result: same metrics, same state up to copies of a card. */
@@ -358,6 +372,7 @@ interface Metrics {
   back: boolean;
   width: number;
   lifeLost: number;
+  blindReveals: number;
 }
 
 function metrics(events: RulesEvent[], cards: Map<string, RulesCard>): Metrics {
@@ -370,8 +385,10 @@ function metrics(events: RulesEvent[], cards: Map<string, RulesCard>): Metrics {
     back: false,
     width: 0,
     lifeLost: 0,
+    blindReveals: 0,
   };
   for (const e of events) {
+    if (e.type === "revealed" && e.blind) m.blindReveals++;
     if (e.type === "attackPlayed") m.power += cards.get(e.uid)?.power ?? 0;
     if (e.type === "usurped") m.usurps++;
     if (e.type === "arcaneDamage") m.arcane += e.amount;
@@ -402,8 +419,9 @@ function summarise(
   final: RulesState,
   actions: SessionAction[],
   cards: Map<string, RulesCard>,
+  since = start.events.length,
 ): TurnLine {
-  const events = final.events.slice(start.events.length);
+  const events = final.events.slice(since);
   const ended = events.findIndex((e) => e.type === "turnEnded");
   if (ended < 0) throw new RulesError("A line must end the turn.");
   const after = events.slice(ended + 1);
@@ -435,12 +453,18 @@ function summarise(
     final.zones.hand.filter((i) => !enteredHand.has(i.uid)).length +
     [...leftHand].filter((uid) => !enteredHand.has(uid)).length;
   const m = metrics(events.slice(0, ended), cards);
-  const banishedPlayable = final.zones.banished.filter(
-    (i) =>
-      !banishedAfter.has(i.uid) &&
-      !final.faceDown.includes(i.uid) &&
-      !!i.card.playableFromBanish,
-  ).length;
+  const odds = final.unknownOdds ?? {};
+  // An unknown card's blood debt costs life at this end phase, by the odds it has blood debt.
+  for (const e of events.slice(0, ended))
+    if (e.type === "revealed" && odds[e.uid])
+      m.lifeLost += odds[e.uid]!.bloodDebt;
+  const banishedPlayable = final.zones.banished
+    .filter((i) => !banishedAfter.has(i.uid) && !final.faceDown.includes(i.uid))
+    .reduce(
+      (n, i) =>
+        n + (odds[i.uid]?.playable ?? (i.card.playableFromBanish ? 1 : 0)),
+      0,
+    );
   const sinchants = arenaAtEnd.filter((u) => {
     const card = cards.get(u);
     return !!card && isRunechantAura(card);
@@ -458,12 +482,51 @@ function summarise(
 export function replayLine(
   start: RulesState,
   actions: SessionAction[],
+  since?: number,
 ): TurnLine {
   const final = actions.reduce(
     (s, action) => applySessionAction(s, action),
     start,
   );
-  return summarise(start, final, actions, cardsOf(start));
+  return summarise(start, final, actions, cardsOf(start), since);
+}
+
+/**
+ * An action with each set of answers its choices may take, and the state each leads to: for an
+ * action whose planned answers don't fit, because the real card that came off asks something an
+ * unknown card didn't.
+ */
+export function answerSets(
+  s: RulesState,
+  action: SessionAction,
+  options: TurnSearchOptions = {},
+): { state: RulesState; action: SessionAction }[] {
+  const limits = { ...DEFAULT_LIMITS, ...options.limits };
+  const cards = cardsOf(s);
+  const found: { state: RulesState; action: SessionAction }[] = [];
+  const pending: string[][][] = [[]];
+  for (
+    let tried = 0;
+    pending.length > 0 && tried < limits.maxChoiceBranches;
+    tried++
+  ) {
+    const answers = pending.shift()!;
+    const { answers: _planned, ...bare } = action as SessionAction & {
+      answers?: string[][];
+    };
+    const move = (
+      answers.length > 0 ? { ...bare, answers } : bare
+    ) as SessionAction;
+    try {
+      found.push({ state: applySessionAction(s, move), action: move });
+    } catch (e) {
+      if (e instanceof NeedsChoice)
+        for (const answer of answersTo(e.request, s, cards, options))
+          pending.push([...answers, answer]);
+      else if (!(e instanceof RulesError)) throw e;
+    }
+  }
+  return found;
 }
 
 /**
@@ -538,7 +601,13 @@ export function searchTurn(
           ? { type: "endTurn" }
           : { type: "endTurn", arsenal: choice };
       for (const { state, action } of resolved(s, end)) {
-        const line = summarise(start, state, [...path, action], cards);
+        const line = summarise(
+          start,
+          state,
+          [...path, action],
+          cards,
+          options.since,
+        );
         if (lineKeys.has(line.key)) {
           stats.duplicateLines++;
           continue;
@@ -597,6 +666,9 @@ export function searchTurn(
     }
   }
 
-  expand(start, []);
+  expand(
+    options.deck === "hidden" ? { ...start, hiddenDeck: true } : start,
+    [],
+  );
   return { lines, stats };
 }
